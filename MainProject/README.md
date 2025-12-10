@@ -15,15 +15,46 @@ To determine the solutions after the complete calculation of the solution, you i
 
 The Data Parser will be called on the string containing the puzzles tips.
 
+### Regex Clues to identify bits of data
+
+#### Number of Entities and Attributes
+
+- Check the "size" string in the csv entry.
+- Take Numbers until '\*'-> Number of Entities
+- Skip '\*'
+- Take Numbers until End of String -> Number of Attributes
+
+#### Attribute Names and Domains
+
+- Getting the Attributes
+  - Check "solution" dict in the csv entry.
+  - Get the list that is the first element in the header section
+    - contains all Attribute Names that should be used in the end
+  - Ignore the first entry, as that is always the House number and can be ignored in our computation approach (will obviously be added back later)
+- Getting the Domains
+  - Check "puzzle" string in the csv entry.
+  - Skip until first ':'
+    - For each Following '-'
+      - Determine the current Attribute List member
+      - Skip until the ':'
+      - Add the text elements inside single quotation marks into a list
+      - define that list as the domain of the determined attribute
+        - Check if number of domain elements fits to the number of entities
+      - move the "List Pointer" to the next entry and start the loop again.
+
+#### Constrains
+
+- Check "puzzle" dict in the csv entry.
+- Skip until '##'
+- Each sequence of numbers followed by a dot represents the start of a constraint.
+
 ## CSP Object
 
 - number of entities
-- variables (list)
-  - name
-- domains (list)
-  - reference to the variable
-  - list of all attributes <- Dictionary
-    - number assigned to the attribute
+- variables and domains (dict)
+  - name of the variable
+  - list of all domains
+  - [variableName : (domain in form of list)]
 - constrains (list)
   - expression
     - dictionary
