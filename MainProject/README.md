@@ -56,6 +56,18 @@ The Data Parser will be called on the string containing the puzzles tips.
   - list of all domains
   - [variableName : (domain in form of list)]
 - constrains (list)
-  - expression
-    - dictionary
-    - Contents/structure of dictionary tbd
+  - List of Tupels
+  - First Value: Type of constraint
+    - '=' -> attr1 == attr2 OR attr1 = num, depending on third value
+    - '!=' -> attr1 != attr2 OR attr1 != num, depending on third value
+    - '>' -> attr1 > attr2
+    - '<' -> attr1 < attr2
+    - '+[number]' -> attr1 == attr2+[number]
+    - '-[number]' -> attr1 == attr2-[number]
+    - '+-[number]' -> attr1 == attr2+[number] OR attr1 == attr2-[number], either is fine
+  - Second Value
+    - attribute (attr1)
+      - First attribute or attribute that something has to be assigned to
+  - Third Value
+    - attribute (attr2) or number (num)
+      - number has to be assigned to attr1
