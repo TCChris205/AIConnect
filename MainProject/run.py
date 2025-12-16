@@ -16,7 +16,7 @@ from typing import Dict, List, Tuple, Optional, Any
 from dataclasses import dataclass, asdict
 
 # Import our modules
-import dataParser
+from dataParser import puzzle_text_to_csp
 from solver import solve_puzzle, SolverStats
 
 
@@ -132,7 +132,8 @@ def compare_solutions(computed: Optional[Dict], expected: Optional[Dict]) -> boo
         return False
 
 
-def solve_single_puzzle(puzzle, expected_solution: Any = None) -> PuzzleResult:
+def solve_single_puzzle(puzzle_id: str, puzzle_text: str, 
+                        expected_solution: Any = None) -> PuzzleResult:
     """
     Solve a single puzzle and return results.
     
@@ -150,7 +151,11 @@ def solve_single_puzzle(puzzle, expected_solution: Any = None) -> PuzzleResult:
     stats = SolverStats()
     
     try:
-        solution, stats = solve_puzzle(puzzle)
+        # Step 1: Parse puzzle into CSP format
+        csp = puzzle_text_to_csp(puzzle_text)
+        
+        # Step 2: Solve the CSP
+        solution, stats = solve_puzzle(csp)
         
     except Exception as e:
         error = str(e)
@@ -165,7 +170,7 @@ def solve_single_puzzle(puzzle, expected_solution: Any = None) -> PuzzleResult:
     correct = compare_solutions(solution, expected) if expected else solved
     
     return PuzzleResult(
-        puzzle_id=puzzle.id,
+        puzzle_id=puzzle_id,
         solved=solved,
         correct=correct,
         solution=solution,
@@ -211,7 +216,7 @@ def print_solution(solution: Dict[int, Dict[str, str]]):
         print(row_line)
 
 
-def run_evaluation(df: pd.DataFrame, max_puzzles: int = -1, 
+def run_evaluation(df: pd.DataFrame, max_puzzles: int = None, 
                    verbose: bool = True) -> List[PuzzleResult]:
     """
     Run evaluation on all puzzles in the dataset.
@@ -226,17 +231,27 @@ def run_evaluation(df: pd.DataFrame, max_puzzles: int = -1,
     """
     results = []
     
-    puzzles_to_solve = df.head(max_puzzles) if not max_puzzles == -1 else df
+    # Determine columns
+    id_col = "id" if "id" in df.columns else df.columns[0]
+    puzzle_col = "puzzle" if "puzzle" in df.columns else df.columns[1]
+    solution_col = "solution" if "solution" in df.columns else None
+    
+    puzzles_to_solve = df.head(max_puzzles) if max_puzzles else df
     total = len(puzzles_to_solve)
     
     print(f"\n{'='*60}")
     print(f"Starting evaluation on {total} puzzles")
     print(f"{'='*60}\n")
     
-    parsedPuzzles = dataParser.run(df)
-
-    for csp, solution in parsedPuzzles:    
-        result = solve_single_puzzle(csp, solution)
+    for idx, row in puzzles_to_solve.iterrows():
+        puzzle_id = str(row[id_col])
+        puzzle_text = row[puzzle_col]
+        expected = row[solution_col] if solution_col else None
+        
+        if verbose:
+            print(f"\n[{len(results)+1}/{total}] Solving puzzle: {puzzle_id}")
+        
+        result = solve_single_puzzle(puzzle_id, puzzle_text, expected)
         results.append(result)
         
         if verbose:
@@ -312,21 +327,17 @@ def main():
         row = df.iloc[args.single]
         puzzle_id = str(row.get("id", args.single))
         puzzle_text = row["puzzle"]
-
-        puzzle = dataParser.puzzle_text_to_csp(puzzle_text)
-
         solution = row.get("solution")
         
         print(f"\nPuzzle: {puzzle_id}")
         print(f"\n{puzzle_text[:500]}...")
         
-        result = solve_single_puzzle(puzzle, solution)
+        result = solve_single_puzzle(puzzle_id, puzzle_text, solution)
         
-        if result.solution:
-            print(f"\n{'='*60}")
-            print("SOLUTION")
-            print(f"{'='*60}")
-            print_solution(result.solution)
+        print(f"\n{'='*60}")
+        print("SOLUTION")
+        print(f"{'='*60}")
+        print_solution(result.solution)
         
         print(f"\n{'='*60}")
         print("STATISTICS")
@@ -343,6 +354,25 @@ def main():
         verbose = args.verbose and not args.quiet
         results = run_evaluation(df, max_puzzles=args.max, verbose=verbose)
         print_summary(results)
+
+
+# Alternative entry point for direct module execution
+def run():
+    """
+    Simplified run function that can be called from other modules.
+    Returns the DataFrame and results for further processing.
+    """
+    # Load dataset
+    df = load_dataset("Gridmode-00000-of-00001.parquet")
+    
+    # Run evaluation on first few puzzles
+    results = run_evaluation(df, max_puzzles=5, verbose=True)
+    
+    # Print summary
+    print_summary(results)
+    
+    return df, results
+
 
 if __name__ == "__main__":
     main()
