@@ -45,7 +45,7 @@ The Data Parser will be called on the string containing the puzzles tips.
 #### Constrains
 
 - Check "puzzle" dict in the csv entry.
-- Skip until '##'
+- Skip until 'Clues:'
 - Each sequence of numbers followed by a dot represents the start of a constraint.
 
 ## CSP Object
@@ -71,3 +71,6 @@ The Data Parser will be called on the string containing the puzzles tips.
   - Third Value
     - attribute (attr2) or number (num)
       - number has to be assigned to attr1
+
+All Attributes are parsed as an "Attribute" Objects, which has a "domain" and a "value" attribute. The value is the actual attribute being parsed, the "domain" is the name of the variable it belongs to.
+Numbers are parsed as simple integers.
