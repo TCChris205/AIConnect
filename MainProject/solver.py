@@ -1,3 +1,13 @@
+from typing import Dict, List, Set, Literal, Tuple, Optional, Any
+from copy import deepcopy
+from dataclasses import dataclass, field
+import re
+import pandas as pd
+import json
+import time
+
+# =================================== Solver ===================================
+
 """
 CSP Solver for Zebra Logic Puzzles
 
@@ -12,18 +22,12 @@ The CSP is modeled as:
 - Constraints: Parsed from puzzle clues
 """
 
-from typing import Dict, List, Set, Tuple, Optional, Any
-from copy import deepcopy
-from dataclasses import dataclass, field
-
-
 @dataclass
 class SolverStats:
     """Track solver statistics for evaluation."""
     backtracks: int = 0
     nodes_explored: int = 0
     arc_revisions: int = 0
-
 
 @dataclass
 class CSPSolver:
@@ -493,7 +497,6 @@ class CSPSolver:
         
         return solution
 
-
 def create_solver_from_csp(csp: Dict) -> CSPSolver:
     """
     Factory function to create a solver from parsed CSP dict.
@@ -510,7 +513,6 @@ def create_solver_from_csp(csp: Dict) -> CSPSolver:
         constraints=csp["constraints"]
     )
 
-
 def solve_puzzle(csp: Dict) -> Tuple[Optional[Dict], SolverStats]:
     """
     Convenience function to solve a puzzle and return solution + stats.
@@ -524,3 +526,855 @@ def solve_puzzle(csp: Dict) -> Tuple[Optional[Dict], SolverStats]:
     solver = create_solver_from_csp(csp)
     solution = solver.solve()
     return solution, solver.stats
+
+# =================================== Parser ===================================
+
+# Global ordinal word mapping (dataset uses at most 6 houses)
+
+ORDINAL_WORDS = {
+    "first": 1,
+    "second": 2,
+    "third": 3,
+    "fourth": 4,
+    "fifth": 5,
+    "sixth": 6,
+}
+
+# Normalization helpers
+
+def normalize_text(s: str) -> str:
+    """
+    Normalize text for matching:
+    - lowercase
+    - remove apostrophes
+    - replace hyphens with spaces
+    - remove the standalone word 'person'
+    - collapse multiple spaces
+    """
+    s = s.lower()
+    # remove apostrophes (both ' and ’)
+    s = re.sub(r"[’']", "", s)
+    # replace hyphens with spaces
+    s = s.replace("-", " ")
+    # remove the word 'person'
+    s = re.sub(r"\bperson\b", "", s)
+    # collapse multiple spaces
+    s = re.sub(r"\s+", " ", s)
+    return s.strip()
+
+# Data classes (internal)
+
+@dataclass
+class Clue:
+    number: int
+    text: str
+
+@dataclass
+class PuzzleSkeleton:
+    houses: int
+    dimensions: Dict[str, List[str]]  # e.g. {"name": [...], "car": [...], ...}
+
+@dataclass
+class ItemRef:
+    dim: str
+    value: str
+
+@dataclass
+class Constraint:
+    """
+    Internal representation of a constraint.
+    Will be converted to a dictionary under "expression".
+    """
+    type: Literal[
+        "same_house",          # X and Y are in the same house
+        "position_equals",     # X is in house N
+        "not_position_equals", # X is NOT in house N
+        "left_of",             # X is somewhere to the left of Y
+        "right_of",            # X is somewhere to the right of Y
+        "next_to",             # X and Y are neighbors
+        "distance",            # distance between positions = d
+        "offset",              # X is directly left/right of Y (distance=1)
+    ]
+    items: List[ItemRef] = field(default_factory=list)
+    position: Optional[int] = None
+    distance: Optional[int] = None
+
+# 1. Split puzzle into description + clues
+
+def split_description_and_clues(text: str):
+    """
+    Takes the full puzzle string.
+    Splits into:
+      - desc_text: everything before '## Clues'
+      - clue_lines: non-empty lines in the clues section
+    """
+    lines = text.splitlines()
+    desc_lines = []
+    clue_lines = []
+    in_clues = False
+
+    for line in lines:
+        stripped = line.strip()
+        if not in_clues:
+            if stripped.startswith("## Clues"):
+                in_clues = True
+            else:
+                desc_lines.append(line)
+        else:
+            if stripped:  # skip empty lines
+                clue_lines.append(line.rstrip("\n"))
+
+    return "\n".join(desc_lines), clue_lines
+
+# 2. Parse description → houses + generic dimensions
+
+def parse_description(desc_text: str) -> PuzzleSkeleton:
+    """
+    Parse the description part into:
+      - number of houses
+      - dimensions (domain per attribute), fully generic.
+
+    Any bullet line with backtick values is treated as a dimension, e.g.:
+
+      - Each person has a unique car: `Ford F-150`, `Honda Civic`
+      - People use unique phone models: `iphone 13`, `google pixel 6`
+      - Each person has a favorite drink: `tea`, `coffee`
+
+    The dimension key is derived from the last meaningful word before ':'.
+    """
+    lines = [l.strip() for l in desc_text.splitlines() if l.strip()]
+
+    # 1) find number of houses
+    m = re.search(r"There are\s+(\d+)\s+houses", desc_text)
+    if not m:
+        raise ValueError("Could not find number of houses")
+    houses = int(m.group(1))
+
+    dimensions: Dict[str, List[str]] = {}
+
+    # simple stopword set for deriving dimension names
+    STOPWORDS = {
+        "each", "person", "people", "has", "have", "a", "an",
+        "unique", "different", "favorite", "various", "distinct",
+        "their", "his", "her", "the", "with", "of", "style", "type"
+    }
+
+    for line in lines:
+        if not line.startswith("-"):
+            continue
+
+        # extract values in backticks
+        values = re.findall(r"`([^`]+)`", line)
+        if not values:
+            continue
+
+        # part before ':' describes the attribute
+        without_dash = line[1:].strip()            # remove leading '-'
+        before_colon = without_dash.split(":", 1)[0]
+
+        tokens = [t.strip().lower().rstrip(".,;:")
+                  for t in before_colon.split()]
+        content_tokens = [t for t in tokens if t and t not in STOPWORDS]
+
+        if content_tokens:
+            # pick last meaningful word, e.g. "car", "job", "model", "drink", "color"
+            dim_key = content_tokens[-1]
+            # trivial plural handling: trim trailing 's' if present
+            if dim_key.endswith("s") and not dim_key.endswith("ss"):
+                dim_key = dim_key[:-1]
+        else:
+            dim_key = f"attr_{len(dimensions) + 1}"
+
+        dimensions[dim_key] = [v.strip() for v in values]
+
+    return PuzzleSkeleton(houses=houses, dimensions=dimensions)
+
+# 3. Clue lines → Clue objects
+
+def extract_clues(clue_lines: List[str]) -> List[Clue]:
+    """
+    Turn numbered clue lines into Clue(number, text).
+    Supports multi-line clues.
+
+    Lines like: '1. The German is Bob.'
+    start a new clue; following lines (without leading number) are appended.
+    """
+    pattern = re.compile(r"^\s*(\d+)\.\s*(.*)$")
+    clues: List[Clue] = []
+    current_number: Optional[int] = None
+    current_parts: List[str] = []
+
+    for line in clue_lines:
+        m = pattern.match(line.strip())
+        if m:
+            # finish previous clue
+            if current_number is not None:
+                full_text = " ".join(p.strip() for p in current_parts).strip()
+                clues.append(Clue(number=current_number, text=full_text))
+
+            current_number = int(m.group(1))
+            current_parts = [m.group(2)]
+        else:
+            # continuation of the current clue
+            if current_number is not None:
+                current_parts.append(line.strip())
+
+    # add last clue
+    if current_number is not None:
+        full_text = " ".join(p.strip() for p in current_parts).strip()
+        clues.append(Clue(number=current_number, text=full_text))
+
+    return clues
+
+# 4. Value index (find items in clue text)
+
+def build_value_index(dimensions: Dict[str, List[str]]) -> Dict[str, ItemRef]:
+    """
+    Build a lookup from normalized value string to ItemRef.
+    Also adds simple adjective variants (…ish) so that e.g.
+    'swede' can be matched by 'swedish person'.
+    """
+    index: Dict[str, ItemRef] = {}
+
+    for dim, values in dimensions.items():
+        for v in values:
+            norm = normalize_text(v)  # e.g. 'swede', 'bachelors degree'
+            ref = ItemRef(dim=dim, value=v)
+            index[norm] = ref
+
+            # Heuristic adjective forms:
+            # 'swede' -> 'swedish', 'dane' -> 'danish', 'brit' -> 'british'
+            # This is generic and not nationality-specific.
+            root = norm
+            variants = []
+
+            if root.endswith("e"):
+                # swede -> swed + ish = swedish, dane -> danish
+                variants.append(root[:-1] + "ish")
+
+            # brit -> british, etc. (for some values this will just be unused)
+            variants.append(root + "ish")
+
+            for var in variants:
+                if var not in index:
+                    index[var] = ref
+
+    return index
+
+
+def find_items_in_text(value_index: Dict[str, ItemRef], text: str) -> List[ItemRef]:
+    """
+    Find all known values in the clue text using normalized strings.
+    """
+    t_norm = normalize_text(text)
+    found: List[ItemRef] = []
+    for key, item in value_index.items():
+        if key in t_norm:
+            found.append(item)
+    return found
+
+# 5. Single clue → Constraint
+
+def parse_single_clue(clue: Clue, value_index: Dict[str, ItemRef]) -> Optional[Constraint]:
+    """
+    Convert a single clue sentence into a Constraint object.
+    Supported patterns:
+      - "X is in the first/second/.../sixth house"          -> position_equals
+      - "X is not in the first/second/.../sixth house"      -> not_position_equals
+      - "X is in the 1st/2nd/... house"                     -> position_equals
+      - "X is not in the 1st/2nd/... house"                 -> not_position_equals
+      - "There is one house between X and Y"                -> distance=2
+      - "There are two houses between X and Y"              -> distance=3
+      - "X is directly left of Y"                           -> offset (distance=1)
+      - "X is somewhere to the left of Y"                   -> left_of
+      - "X is somewhere to the right of Y"                  -> right_of
+      - "X and Y are next to each other"                    -> next_to
+      - "X is Y" / "The person who ... is Z" (two items)    -> same_house
+    """
+    t = clue.text.lower()
+
+    # 1) Negative position with word ordinals: "X is not in the fourth house."
+    m_not_pos_word = re.search(
+        r"is not in the (first|second|third|fourth|fifth|sixth) house",
+        t
+    )
+    if m_not_pos_word:
+        word = m_not_pos_word.group(1)
+        pos = ORDINAL_WORDS[word]
+        before = t[:m_not_pos_word.start()]
+        items = find_items_in_text(value_index, before)
+        if items:
+            return Constraint(
+                type="not_position_equals",
+                items=[items[0]],
+                position=pos,
+            )
+
+    # 2) Positive position with word ordinals: "X is in the first/third/sixth house."
+    m_pos_word = re.search(
+        r"is in the (first|second|third|fourth|fifth|sixth) house",
+        t
+    )
+    if m_pos_word:
+        word = m_pos_word.group(1)
+        pos = ORDINAL_WORDS[word]
+        before = t[:m_pos_word.start()]
+        items = find_items_in_text(value_index, before)
+        if items:
+            return Constraint(
+                type="position_equals",
+                items=[items[0]],
+                position=pos,
+            )
+
+    # 3) Negative position with digits: "X is not in the 4th house."
+    m_not_pos = re.search(r"is not in the (\d+)(st|nd|rd|th)? house", t)
+    if m_not_pos:
+        pos = int(m_not_pos.group(1))
+        before = t[:m_not_pos.start()]
+        items = find_items_in_text(value_index, before)
+        if items:
+            return Constraint(
+                type="not_position_equals",
+                items=[items[0]],
+                position=pos,
+            )
+
+    # 4) Positive position with digits: "X is in the 2nd house."
+    m_pos = re.search(r"in the (\d+)(st|nd|rd|th)? house", t)
+    if m_pos:
+        pos = int(m_pos.group(1))
+        before = t[:m_pos.start()]
+        items = find_items_in_text(value_index, before)
+        if items:
+            return Constraint(
+                type="position_equals",
+                items=[items[0]],
+                position=pos,
+            )
+
+    # 5) Distance: "There is one house between X and Y." -> distance=2
+    if "one house between" in t:
+        items = find_items_in_text(value_index, t)
+        if len(items) >= 2:
+            return Constraint(
+                type="distance",
+                items=items[:2],
+                distance=2,
+            )
+
+    # "There are two houses between X and Y." -> distance=3
+    if "two houses between" in t:
+        items = find_items_in_text(value_index, t)
+        if len(items) >= 2:
+            return Constraint(
+                type="distance",
+                items=items[:2],
+                distance=3,
+            )
+
+    # 6) Directly left: "X is directly left of Y." -> offset
+    if "directly left of" in t:
+        left_part, right_part = t.split("directly left of", 1)
+        left_items = find_items_in_text(value_index, left_part)
+        right_items = find_items_in_text(value_index, right_part)
+        if left_items and right_items:
+            return Constraint(
+                type="offset",
+                items=[left_items[0], right_items[0]],
+                distance=1,
+            )
+
+    # 7) Somewhere to the left: "X is somewhere to the left of Y." -> left_of
+    if "somewhere to the left of" in t:
+        left_part, right_part = t.split("somewhere to the left of", 1)
+        left_items = find_items_in_text(value_index, left_part)
+        right_items = find_items_in_text(value_index, right_part)
+        if left_items and right_items:
+            return Constraint(
+                type="left_of",
+                items=[left_items[0], right_items[0]],
+            )
+
+    # 8) Somewhere to the right: "X is somewhere to the right of Y." -> right_of
+    if "somewhere to the right of" in t:
+        left_part, right_part = t.split("somewhere to the right of", 1)
+        left_items = find_items_in_text(value_index, left_part)
+        right_items = find_items_in_text(value_index, right_part)
+        if left_items and right_items:
+            return Constraint(
+                type="right_of",
+                items=[left_items[0], right_items[0]],
+            )
+
+    # 9) Next to each other: "X and Y are next to each other." -> next_to
+    if "next to each other" in t:
+        before = t.split("next to each other", 1)[0]
+        parts = before.split(" and ")
+        if len(parts) == 2:
+            items_a = find_items_in_text(value_index, parts[0])
+            items_b = find_items_in_text(value_index, parts[1])
+            if items_a and items_b:
+                return Constraint(
+                    type="next_to",
+                    items=[items_a[0], items_b[0]],
+                )
+
+    # 10) Special same_house: if exactly 2 known values appear in the sentence
+    all_items = find_items_in_text(value_index, t)
+    if len(all_items) == 2:
+        return Constraint(
+            type="same_house",
+            items=[all_items[0], all_items[1]],
+        )
+
+    # 11) Generic fallback: "X is Y." / "X is the Y."
+    if (
+        " is " in t
+        and "between" not in t
+        and "left of" not in t
+        and "right of" not in t
+        and "next to" not in t
+        and "house" not in t
+    ):
+        left, right = t.split(" is ", 1)
+        left_items = find_items_in_text(value_index, left)
+        right_clean = right.replace("the ", "").replace(".", "").strip()
+        right_items = find_items_in_text(value_index, right_clean)
+        if left_items and right_items:
+            return Constraint(
+                type="same_house",
+                items=[left_items[0], right_items[0]],
+            )
+
+    # nothing matched
+    return None
+
+
+def clues_to_constraint_objects(dimensions: Dict[str, List[str]],
+                                clues: List[Clue]) -> List[Constraint]:
+    """
+    Apply parse_single_clue to all clues.
+    Returns a list of internal Constraint objects.
+    """
+    value_index = build_value_index(dimensions)
+    constraints: List[Constraint] = []
+    for clue in clues:
+        c = parse_single_clue(clue, value_index)
+        if c is None:
+            print(f"[WARN] Clue {clue.number} not parsed: {clue.text}")
+        else:
+            constraints.append(c)
+    return constraints
+
+# 6. Constraints → expression dict
+
+def constraint_to_expression_dict(c: Constraint) -> dict:
+    """
+    Convert a Constraint object into the final dictionary format
+    stored under 'expression'.
+    """
+    return {
+        "type": c.type,
+        "items": [{"dim": it.dim, "value": it.value} for it in c.items],
+        "position": c.position,
+        "distance": c.distance,
+    }
+
+# 7. Main function: puzzle string → CSP object
+
+def puzzle_text_to_csp(text: str) -> Dict:
+    """
+    Takes the puzzle string (as stored in the CSV 'puzzle' column)
+    and returns a CSP object with:
+      - 'houses'
+      - 'variables' (dimensions/domains)
+      - 'constraints': list of { "expression": { ... } }
+    """
+    # 1) split description and clues
+    desc_text, clue_lines = split_description_and_clues(text)
+
+    # 2) parse description
+    skeleton = parse_description(desc_text)
+
+    # 3) extract clues
+    clues = extract_clues(clue_lines)
+
+    # 4) create internal constraint objects
+    constraint_objects = clues_to_constraint_objects(skeleton.dimensions, clues)
+
+    # 5) convert to external "expression" dictionaries
+    constraints = [{"expression": constraint_to_expression_dict(c)}
+                   for c in constraint_objects]
+
+    # 6) final CSP representation
+    return {
+        "houses": skeleton.houses,
+        "variables": skeleton.dimensions,
+        "constraints": constraints,
+    }
+
+# =================================== Run ===================================
+
+"""
+Main runner script for the Zebra Logic Puzzle CSP Solver.
+
+This script:
+1. Loads puzzles from the ZebraLogicBench dataset (parquet format)
+2. Parses each puzzle into CSP format
+3. Solves using backtracking with MRV and forward checking
+4. Evaluates accuracy and efficiency
+5. Outputs results and statistics
+"""
+
+@dataclass
+class PuzzleResult:
+    """Store results for a single puzzle."""
+    puzzle_id: str
+    solved: bool
+    correct: bool
+    solution: Optional[Dict]
+    expected: Optional[Dict]
+    stats: SolverStats
+    time_seconds: float
+    error: Optional[str] = None
+
+def load_dataset(filepath: str) -> pd.DataFrame:
+    """
+    Load the puzzle dataset from parquet file.
+    
+    Args:
+        filepath: Path to the parquet file
+    
+    Returns:
+        DataFrame with puzzle data
+    """
+    print(f"Loading dataset from {filepath}...")
+    df = pd.read_parquet(filepath)
+    print(f"Loaded {len(df)} puzzles")
+    return df
+
+def parse_expected_solution(solution_data: Any) -> Optional[Dict[int, Dict[str, str]]]:
+    """
+    Parse the expected solution from dataset format to our format.
+    
+    The dataset stores solutions as:
+    - JSON string or dict with header and rows
+    - We convert to {house_num: {dim: value}}
+    """
+    if solution_data is None:
+        return None
+    
+    try:
+        # Handle string format
+        if isinstance(solution_data, str):
+            solution_data = json.loads(solution_data)
+        
+        # Expected format: {"header": [...], "rows": [[...], [...]]}
+        if isinstance(solution_data, dict) and "header" in solution_data:
+            header = solution_data["header"]
+            rows = solution_data["rows"]
+            
+            result = {}
+            for row in rows:
+                # First column is usually house number
+                house_num = int(row[0]) if isinstance(row[0], (int, str)) else row[0]
+                result[house_num] = {}
+                for i, col in enumerate(header[1:], start=1):
+                    if i < len(row):
+                        result[house_num][col.lower()] = row[i]
+            
+            return result
+        
+        return solution_data
+    except Exception as e:
+        print(f"Warning: Could not parse solution: {e}")
+        return None
+
+def compare_solutions(computed: Optional[Dict], expected: Optional[Dict]) -> bool:
+    """
+    Compare computed solution with expected solution.
+    
+    Handles differences in key naming and formatting.
+    Returns True if solutions match.
+    """
+    if computed is None or expected is None:
+        return False
+    
+    # Normalize both solutions for comparison
+    def normalize(sol: Dict) -> Dict:
+        normalized = {}
+        for house, attrs in sol.items():
+            house_key = int(house) if not isinstance(house, int) else house
+            normalized[house_key] = {}
+            for dim, val in attrs.items():
+                # Normalize dimension and value to lowercase
+                dim_norm = dim.lower().strip()
+                val_norm = str(val).lower().strip()
+                normalized[house_key][dim_norm] = val_norm
+        return normalized
+    
+    try:
+        comp_norm = normalize(computed)
+        exp_norm = normalize(expected)
+        
+        # Check if all houses match
+        if set(comp_norm.keys()) != set(exp_norm.keys()):
+            return False
+        
+        for house in comp_norm:
+            comp_attrs = comp_norm[house]
+            exp_attrs = exp_norm.get(house, {})
+            
+            # Check common dimensions
+            for dim in set(comp_attrs.keys()) & set(exp_attrs.keys()):
+                if comp_attrs[dim] != exp_attrs[dim]:
+                    return False
+        
+        return True
+    except Exception:
+        return False
+
+def solve_single_puzzle(puzzle_id: str, puzzle_text: str, 
+                        expected_solution: Any = None) -> PuzzleResult:
+    """
+    Solve a single puzzle and return results.
+    
+    Args:
+        puzzle_id: Unique identifier for the puzzle
+        puzzle_text: The puzzle description text
+        expected_solution: Expected solution for validation
+    
+    Returns:
+        PuzzleResult with solution and statistics
+    """
+    start_time = time.time()
+    error = None
+    solution = None
+    stats = SolverStats()
+    
+    try:
+        # Step 1: Parse puzzle into CSP format
+        csp = puzzle_text_to_csp(puzzle_text)
+        
+        # Step 2: Solve the CSP
+        solution, stats = solve_puzzle(csp)
+        
+    except Exception as e:
+        error = str(e)
+    
+    elapsed = time.time() - start_time
+    
+    # Parse expected solution
+    expected = parse_expected_solution(expected_solution)
+    
+    # Determine if solution is correct
+    solved = solution is not None
+    correct = compare_solutions(solution, expected) if expected else solved
+    
+    return PuzzleResult(
+        puzzle_id=puzzle_id,
+        solved=solved,
+        correct=correct,
+        solution=solution,
+        expected=expected,
+        stats=stats,
+        time_seconds=elapsed,
+        error=error
+    )
+
+def print_solution(solution: Dict[int, Dict[str, str]]):
+    """Pretty print a puzzle solution as a table."""
+    if not solution:
+        print("No solution found")
+        return
+    
+    # Get all dimensions
+    all_dims = set()
+    for attrs in solution.values():
+        all_dims.update(attrs.keys())
+    dims = sorted(all_dims)
+    
+    # Print header
+    header = ["House"] + dims
+    col_widths = [max(len(h), 10) for h in header]
+    
+    # Update widths based on content
+    for house in sorted(solution.keys()):
+        for i, dim in enumerate(dims):
+            val = solution[house].get(dim, "")
+            col_widths[i + 1] = max(col_widths[i + 1], len(str(val)))
+    
+    # Print table
+    header_line = " | ".join(h.ljust(w) for h, w in zip(header, col_widths))
+    print(header_line)
+    print("-" * len(header_line))
+    
+    for house in sorted(solution.keys()):
+        row = [str(house)]
+        for dim in dims:
+            row.append(solution[house].get(dim, ""))
+        row_line = " | ".join(str(v).ljust(w) for v, w in zip(row, col_widths))
+        print(row_line)
+
+def run_evaluation(df: pd.DataFrame, max_puzzles: int = -1, 
+                   verbose: bool = True) -> List[PuzzleResult]:
+    """
+    Run evaluation on all puzzles in the dataset.
+    
+    Args:
+        df: DataFrame with puzzles
+        max_puzzles: Maximum number of puzzles to solve (None for all)
+        verbose: Whether to print progress
+    
+    Returns:
+        List of PuzzleResult for each puzzle
+    """
+    results = []
+    
+    # Determine columns
+    id_col = "id" if "id" in df.columns else df.columns[0]
+    puzzle_col = "puzzle" if "puzzle" in df.columns else df.columns[1]
+    solution_col = "solution" if "solution" in df.columns else None
+    
+    puzzles_to_solve = df.head(max_puzzles) if not max_puzzles == -1 else df
+    total = len(puzzles_to_solve)
+    
+    print(f"\n{'='*60}")
+    print(f"Starting evaluation on {total} puzzles")
+    print(f"{'='*60}\n")
+    
+    for idx, row in puzzles_to_solve.iterrows():
+        puzzle_id = str(row[id_col])
+        puzzle_text = row[puzzle_col]
+        expected = row[solution_col] if solution_col else None
+        
+        if verbose:
+            print(f"\n[{len(results)+1}/{total}] Solving puzzle: {puzzle_id}")
+        
+        result = solve_single_puzzle(puzzle_id, puzzle_text, expected)
+        results.append(result)
+        
+        if verbose:
+            status = "✓ CORRECT" if result.correct else ("✗ WRONG" if result.solved else "✗ FAILED")
+            print(f"  Status: {status}")
+            print(f"  Time: {result.time_seconds:.3f}s")
+            print(f"  Stats: {result.stats.nodes_explored} nodes, "
+                  f"{result.stats.backtracks} backtracks")
+            
+            if result.error:
+                print(f"  Error: {result.error}")
+    
+    return results
+
+def print_summary(results: List[PuzzleResult]):
+    """Print evaluation summary statistics."""
+    total = len(results)
+    solved = sum(1 for r in results if r.solved)
+    correct = sum(1 for r in results if r.correct)
+    
+    total_time = sum(r.time_seconds for r in results)
+    avg_time = total_time / total if total > 0 else 0
+    
+    total_nodes = sum(r.stats.nodes_explored for r in results)
+    total_backtracks = sum(r.stats.backtracks for r in results)
+    
+    print(f"\n{'='*60}")
+    print("EVALUATION SUMMARY")
+    print(f"{'='*60}")
+    print(f"Total puzzles:     {total}")
+    print(f"Solved:            {solved} ({100*solved/total:.1f}%)")
+    print(f"Correct:           {correct} ({100*correct/total:.1f}%)")
+    print(f"{'='*60}")
+    print(f"Total time:        {total_time:.2f}s")
+    print(f"Average time:      {avg_time:.3f}s per puzzle")
+    print(f"Total nodes:       {total_nodes}")
+    print(f"Total backtracks:  {total_backtracks}")
+    print(f"{'='*60}")
+    
+    # Show failed puzzles
+    failed = [r for r in results if not r.solved or not r.correct]
+    if failed:
+        print(f"\nFailed puzzles ({len(failed)}):")
+        for r in failed[:10]:  # Show first 10
+            print(f"  - {r.puzzle_id}: {'Parse error' if r.error else 'Incorrect solution'}")
+
+def main():
+    """Main entry point for the solver."""
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="Zebra Logic Puzzle CSP Solver")
+    parser.add_argument("--data", type=str, 
+                        default="Gridmode-00000-of-00001.parquet",
+                        help="Path to puzzle dataset (parquet)")
+    parser.add_argument("--max", type=int, default=None,
+                        help="Maximum puzzles to solve")
+    parser.add_argument("--verbose", action="store_true", default=True,
+                        help="Print detailed progress")
+    parser.add_argument("--quiet", action="store_true",
+                        help="Minimal output")
+    parser.add_argument("--single", type=int, default=None,
+                        help="Solve single puzzle by index")
+    
+    args = parser.parse_args()
+    
+    # Load dataset
+    df = load_dataset(args.data)
+    
+    if args.single is not None:
+        # Solve single puzzle
+        row = df.iloc[args.single]
+        puzzle_id = str(row.get("id", args.single))
+        puzzle_text = row["puzzle"]
+        solution = row.get("solution")
+        
+        print(f"\nPuzzle: {puzzle_id}")
+        print(f"\n{puzzle_text[:500]}...")
+        
+        result = solve_single_puzzle(puzzle_id, puzzle_text, solution)
+        
+        if result.solution:
+            print(f"\n{'='*60}")
+            print("SOLUTION")
+            print(f"{'='*60}")
+            print_solution(result.solution)
+        else:
+            print(f"\n{'='*60}")
+            print("NO SOLUTION FOUND")
+            print(f"{'='*60}")
+        
+        print(f"\n{'='*60}")
+        print("STATISTICS")
+        print(f"{'='*60}")
+        print(f"Solved: {result.solved}")
+        print(f"Correct: {result.correct}")
+        print(f"Time: {result.time_seconds:.3f}s")
+        print(f"Nodes explored: {result.stats.nodes_explored}")
+        print(f"Backtracks: {result.stats.backtracks}")
+        print(f"Arc revisions: {result.stats.arc_revisions}")
+        
+    else:
+        # Run full evaluation
+        verbose = args.verbose and not args.quiet
+        results = run_evaluation(df, max_puzzles=args.max, verbose=verbose)
+        print_summary(results)
+
+# Alternative entry point for direct module execution
+def run():
+    """
+    Simplified run function that can be called from other modules.
+    Returns the DataFrame and results for further processing.
+    """
+    # Load dataset
+    df = load_dataset("Gridmode-00000-of-00001.parquet")
+    
+    # Run evaluation on first few puzzles
+    results = run_evaluation(df, max_puzzles=5, verbose=True)
+    
+    # Print summary
+    print_summary(results)
+    
+    return df, results
+
+if __name__ == "__main__":
+    main()
