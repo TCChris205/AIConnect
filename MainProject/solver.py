@@ -28,6 +28,7 @@ class SolverStats:
     backtracks: int = 0
     nodes_explored: int = 0
     arc_revisions: int = 0
+    steps = int = 0
 
 @dataclass
 class CSPSolver:
@@ -411,7 +412,8 @@ class CSPSolver:
             Complete assignment if solution found, None otherwise
         """
         self.stats.nodes_explored += 1
-        
+        self.stats.steps += 1
+
         # Check if assignment is complete
         if len(assignment) == len(domains):
             return assignment
