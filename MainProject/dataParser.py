@@ -419,7 +419,7 @@ def run(filename = "Gridmode-00000-of-00001.parquet"):
 
     print(df.head(3))
 
-    result = []
+    csps = []
 
     for _, row in df.iterrows():
         puzzle_id = row["id"]
@@ -438,9 +438,9 @@ def run(filename = "Gridmode-00000-of-00001.parquet"):
         for i, c in enumerate(csp.constraints, start=1):
             print(f"{i}. {c}")
         
-        result.append(csp)
+        csps.append(csp)
 
-    return df, result
+    return df, csps
 
 if __name__ == "__main__":
     run()
