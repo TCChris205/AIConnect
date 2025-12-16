@@ -58,6 +58,59 @@ class Puzzle:
     variables: dict = field(default_factory=dict)
     constraints: list = field(default_factory=list)
 
+
+# ===== SIZE VALIDATION (NEW) =====
+
+def parse_size(size_str: str) -> tuple[int, int]:
+    """
+    Parses the size field from CSV: "<entities>*<attributes>"
+    Example: "5*4" -> (5, 4)
+    """
+    try:
+        entities, attributes = size_str.split("*")
+        return int(entities), int(attributes)
+    except Exception:
+        raise ValueError(f"Invalid size format: {size_str}")
+
+
+def validate_against_size(
+    size_str: str,
+    skeleton: PuzzleSkeleton
+) -> List[str]:
+    """
+    Checks whether parsed entities and attributes match the CSV 'size' field.
+    Returns a list of warning messages.
+    """
+    warnings = []
+
+    expected_entities, expected_attributes = parse_size(size_str)
+
+    # 1) Entities (houses)
+    if skeleton.houses != expected_entities:
+        warnings.append(
+            f"Entity mismatch: size={expected_entities}, parsed={skeleton.houses}"
+        )
+
+    # 2) Attributes (domains)
+    actual_attributes = len(skeleton.domains)
+    if actual_attributes != expected_attributes:
+        warnings.append(
+            f"Attribute mismatch: size={expected_attributes}, parsed={actual_attributes}"
+        )
+
+    # 3) Domain sizes
+    for domain, values in skeleton.domains.items():
+        if len(values) != expected_entities:
+            warnings.append(
+                f"Domain size mismatch for '{domain}': "
+                f"{len(values)} values, expected {expected_entities}"
+            )
+
+    return warnings
+
+# ===== SIZE VALIDATION (NEW) =====
+
+
 # 1. Split puzzle into description + clues
 
 def split_description_and_clues(text: str):
@@ -383,7 +436,8 @@ def clues_to_constraint_objects(domains: Dict[str, List[str]],
 
 # 7. Main function: puzzle string → CSP object
 
-def puzzle_text_to_csp(text: str) -> Puzzle:
+# adjustment: include size in puzzle_text_to_csp
+def puzzle_text_to_csp(text: str, size: str = None) -> Puzzle:
     """
     Takes the puzzle string (as stored in the CSV 'puzzle' column)
     and returns a CSP object with:
@@ -396,6 +450,17 @@ def puzzle_text_to_csp(text: str) -> Puzzle:
 
     # 2) parse description
     skeleton = parse_description(desc_text)
+
+
+    # ===== SIZE VALIDATION (NEW) =====
+
+    if size is not None:
+        warnings = validate_against_size(size, skeleton)
+        for w in warnings:
+            print(f"[SIZE WARNING] {w}")
+
+    # ===== SIZE VALIDATION (NEW) =====
+
 
     # 3) extract clues
     clues = extract_clues(clue_lines)
@@ -424,11 +489,13 @@ def run(filename = "Gridmode-00000-of-00001.parquet"):
     for _, row in df.iterrows():
         puzzle_id = row["id"]
         puzzle_text = row["puzzle"]
+# adjustment: include row "size" as "puzzle_size"
+        puzzle_size = row["size"]
 
         print(f"\nPuzzle {puzzle_id} loaded\n")
         print(puzzle_text[:200], "...")
-
-        csp = puzzle_text_to_csp(puzzle_text)
+# adjustment: include puzzle_size in puzzle_text_to_csp
+        csp = puzzle_text_to_csp(puzzle_text, puzzle_size)
 
         print("\nCSP VARIABLES / DOMAINS")
         for domain, vals in csp.variables.items():
