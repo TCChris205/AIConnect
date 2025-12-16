@@ -15,6 +15,8 @@ The CSP is modeled as:
 from typing import Dict, List, Set, Tuple, Optional, Any
 from copy import deepcopy
 from dataclasses import dataclass, field
+from dataParser import Puzzle
+import re
 
 
 @dataclass
@@ -68,9 +70,8 @@ class CSPSolver:
             constraint: The constraint expression dict
             assignment: Current variable assignments {(dim, val): position}
         """
-        expr = constraint.get("expression", constraint)
-        ctype = expr["type"]
-        items = expr.get("items", [])
+        ctype = constraint[0]
+        items = [constraint[1], constraint[2]]
         
         # Get assigned positions for items in constraint
         positions = []
@@ -82,54 +83,69 @@ class CSPSolver:
                 positions.append(None)  # Not yet assigned
         
         # Handle each constraint type
-        if ctype == "same_house":
+
+        # Special Cases if the second attribute is a number
+
+        if type(items[1]) == int:
+            if ctype == "=":
+                # X must be in house N
+                if positions[0] is None:
+                    return True
+                return positions[0] == items[1]
+            
+            elif ctype == "!=":
+                # X must NOT be in house N
+                if positions[0] is None:
+                    return True
+                return positions[0] != items[1]
+
+        # Regular Cases
+
+        if ctype == "=":
             # X and Y must be in the same house
             if positions[0] is None or positions[1] is None:
                 return True  # Can't check yet
             return positions[0] == positions[1]
         
-        elif ctype == "position_equals":
-            # X must be in house N
-            target_pos = expr.get("position")
-            if positions[0] is None:
-                return True
-            return positions[0] == target_pos
-        
-        elif ctype == "not_position_equals":
-            # X must NOT be in house N
-            target_pos = expr.get("position")
-            if positions[0] is None:
-                return True
-            return positions[0] != target_pos
-        
-        elif ctype == "left_of":
+        elif ctype == "<":
             # X is somewhere to the left of Y (X.pos < Y.pos)
             if positions[0] is None or positions[1] is None:
                 return True
             return positions[0] < positions[1]
         
-        elif ctype == "right_of":
+        elif ctype == ">":
             # X is somewhere to the right of Y (X.pos > Y.pos)
             if positions[0] is None or positions[1] is None:
                 return True
             return positions[0] > positions[1]
         
-        elif ctype == "next_to":
-            # X and Y are neighbors (|X.pos - Y.pos| == 1)
-            if positions[0] is None or positions[1] is None:
-                return True
-            return abs(positions[0] - positions[1]) == 1
-        
-        elif ctype == "distance":
+        # Distance Check
+
+        distanceCheck = re.search(r"+-(\d+)", ctype)
+
+        if distanceCheck:
             # Distance between X and Y equals d
-            dist = expr.get("distance")
+            dist = distanceCheck.group(1)
             if positions[0] is None or positions[1] is None:
                 return True
             return abs(positions[0] - positions[1]) == dist
+
+        # Offset Check
         
-        elif ctype == "offset":
+        offsetCheckL = re.search(r"+(\d+)", ctype)
+
+        if offsetCheckL:
             # X is directly left of Y (X.pos + 1 == Y.pos)
-            dist = expr.get("distance", 1)
+            dist = offsetCheckL.group(1)
+            if positions[0] is None or positions[1] is None:
+                return True
+            return positions[1] - positions[0] == dist
+        
+        offsetCheckR = re.search(r"-(\d+)", ctype)
+
+        if offsetCheckR:
+            # X is directly left of Y (X.pos + 1 == Y.pos)
+            dist = offsetCheckR.group(1)
             if positions[0] is None or positions[1] is None:
                 return True
             return positions[1] - positions[0] == dist
@@ -179,15 +195,16 @@ class CSPSolver:
         
         # For each constraint, add relevant arcs
         for constraint in self.constraints:
-            expr = constraint.get("expression", constraint)
-            items = expr.get("items", [])
+            expr = constraint[0]
+            attr1 = constraint[1]
+            attr2 = constraint[2]
             
-            if len(items) == 2:
-                var1 = (items[0]["dim"], items[0]["value"])
-                var2 = (items[1]["dim"], items[1]["value"])
+            if attr1 and attr2:
+                var1 = (attr1.domain, attr1.value)
+                var2 = (attr2.domain, attr2.value)
                 queue.append((var1, var2, constraint))
                 queue.append((var2, var1, constraint))
-        
+    
         # Add uniqueness arcs (same dimension, different values)
         for dim, values in self.variables.items():
             for i, val1 in enumerate(values):
@@ -195,8 +212,8 @@ class CSPSolver:
                     var1 = (dim, val1)
                     var2 = (dim, val2)
                     # These must have different positions
-                    queue.append((var1, var2, {"type": "different"}))
-                    queue.append((var2, var1, {"type": "different"}))
+                    queue.append((var1, var2, "!="))
+                    queue.append((var2, var1, "!="))
         
         while queue:
             var1, var2, constraint = queue.pop(0)
@@ -222,7 +239,7 @@ class CSPSolver:
     
     def _revise(self, domains: Dict[Tuple[str, str], Set[int]], 
                 var1: Tuple[str, str], var2: Tuple[str, str], 
-                constraint: Dict) -> bool:
+                constraint: str) -> bool:
         """
         Remove values from var1's domain that have no support in var2's domain.
         Returns True if domain was reduced.
@@ -249,13 +266,11 @@ class CSPSolver:
     
     def _arc_consistent(self, var1: Tuple[str, str], pos1: int,
                         var2: Tuple[str, str], pos2: int, 
-                        constraint: Dict) -> bool:
+                        constraint: str) -> bool:
         """Check if (var1=pos1, var2=pos2) satisfies the constraint."""
-        expr = constraint.get("expression", constraint)
-        ctype = expr.get("type", constraint.get("type"))
         
         # Handle uniqueness constraint
-        if ctype == "different":
+        if constraint == "!=":
             return pos1 != pos2
         
         # Handle regular constraints
@@ -461,19 +476,18 @@ class CSPSolver:
         # Apply initial constraint propagation
         # First, apply unary constraints (position_equals, not_position_equals)
         for constraint in self.constraints:
-            expr = constraint.get("expression", constraint)
-            ctype = expr["type"]
-            items = expr.get("items", [])
             
-            if ctype == "position_equals" and len(items) == 1:
-                var = (items[0]["dim"], items[0]["value"])
-                pos = expr.get("position")
-                self.domains[var] = {pos}
+            ctype = constraint[0]
+            attr1 = constraint[1]
+            attr2 = constraint[2]
             
-            elif ctype == "not_position_equals" and len(items) == 1:
-                var = (items[0]["dim"], items[0]["value"])
-                pos = expr.get("position")
-                self.domains[var].discard(pos)
+            if ctype == "=" and type(attr2) == int:
+                var = (attr1.domain, attr1.value)
+                self.domains[var] = {attr2}
+            
+            elif ctype == "!=" and type(attr2) == int:
+                var = (attr1.domain, attr1.value)
+                self.domains[var].discard(attr2)
         
         # Apply AC-3
         domains_copy = {k: v.copy() for k, v in self.domains.items()}
@@ -494,7 +508,7 @@ class CSPSolver:
         return solution
 
 
-def create_solver_from_csp(csp: Dict) -> CSPSolver:
+def create_solver_from_csp(csp: Puzzle) -> CSPSolver:
     """
     Factory function to create a solver from parsed CSP dict.
     
@@ -505,13 +519,13 @@ def create_solver_from_csp(csp: Dict) -> CSPSolver:
         Configured CSPSolver instance
     """
     return CSPSolver(
-        num_houses=csp["houses"],
-        variables=csp["variables"],
-        constraints=csp["constraints"]
+        num_houses=csp.entities,
+        variables=csp.variables,
+        constraints=csp.constraints
     )
 
 
-def solve_puzzle(csp: Dict) -> Tuple[Optional[Dict], SolverStats]:
+def solve_puzzle(csp: Puzzle) -> Tuple[Optional[Dict], SolverStats]:
     """
     Convenience function to solve a puzzle and return solution + stats.
     

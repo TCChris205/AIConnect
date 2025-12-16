@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Dict, List, Literal, Optional
 import re
+import pandas as pd
 
 # Global ordinal word mapping (dataset uses at most 6 houses)
 
@@ -54,6 +55,7 @@ class Attribute:
 
 @dataclass
 class Puzzle:
+    id: int = 0
     entities: int = 0
     variables: dict = field(default_factory=dict)
     constraints: list = field(default_factory=list)
@@ -408,27 +410,27 @@ def puzzle_text_to_csp(text: str) -> Puzzle:
 
 # 8. Primarily Called Function
 
-def run(filename = "Gridmode-00000-of-00001.parquet"):
+def run(df: pd.DataFrame):
     """
     Imports the appropriate .parquet file and parses each constrain within into a list as a specified object.
     """
-    import pandas as pd
-
-    # Read File
-    df = pd.read_parquet(filename)
-
-    print(df.head(3))
 
     csps = []
+    solutions = []
 
     for _, row in df.iterrows():
         puzzle_id = row["id"]
         puzzle_text = row["puzzle"]
-
+        try:
+            solution = row["solution"]
+            solutions.append(solution)
+        except:
+            pass
         print(f"\nPuzzle {puzzle_id} loaded\n")
         print(puzzle_text[:200], "...")
 
         csp = puzzle_text_to_csp(puzzle_text)
+        csp.id = puzzle_id
 
         print("\nCSP VARIABLES / DOMAINS")
         for domain, vals in csp.variables.items():
@@ -440,7 +442,4 @@ def run(filename = "Gridmode-00000-of-00001.parquet"):
         
         csps.append(csp)
 
-    return df, csps
-
-if __name__ == "__main__":
-    run()
+    return csps, solutions
