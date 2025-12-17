@@ -485,14 +485,13 @@ Where:
 
 | Name | University | 
 |------|------------|
-| [Name 1] | SEECS/NUST (Pakistan) |
-| [Name 2] | HSBI (Germany) |
-| [Name 3] | TDU (Türkiye) | 
-| [Name 4] | CST/RUB (Bhutan) |
-| [Name 4] | CST/RUB (Bhutan) |
-| [Name 4] | CST/RUB (Bhutan) |
-| [Name 4] | CST/RUB (Bhutan) |
-| [Name 4] | CST/RUB (Bhutan) | 
+| Chris | HSBI (Germany) |
+| Adrian | HSBI (Germany) |
+| Linus | HSBI (Germany)| 
+| Markus | HSBI (Germany) |
+| Haider Aitezaz Ali | NUST (Pakistan) |
+| Abdullah Farooq | NUST (Pakistan) |
+| Eesha Raees | NUST (Pakistan) |
 ---
 
 ## 🙏 Acknowledgments
