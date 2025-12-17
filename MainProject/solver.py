@@ -1278,7 +1278,7 @@ import csv
 
 import csv
 
-def convert_solution_to_grid_format(solution: Optional[Dict], variables: Dict[str, List[str]]) -> str:
+def convert_solution_to_grid_format(solution: Optional[Dict]) -> str:
     """
     Convert our solution format to the required grid_solution format.
     
