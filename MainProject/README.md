@@ -434,12 +434,15 @@ Where:
 
 **AI Connect 2025 - Team [Your Team Name]**
 
-| Name | University | Role |
-|------|------------|------|
-| [Name 1] | SEECS/NUST (Pakistan) | CSP Solver Implementation |
-| [Name 2] | HSBI (Germany) | Natural Language Parser |
-| [Name 3] | TDU (Türkiye) | Evaluation & Testing |
-| [Name 4] | CST/RUB (Bhutan) | Documentation & Analysis |
+| Name | University |
+|------|------------|
+| [Name 1] | SEECS/NUST (Pakistan) |
+| [Name 2] | HSBI (Germany) |
+| [Name 3] | TDU (Türkiye) |
+| [Name 4] | CST/RUB (Bhutan) |
+| [Name 4] | CST/RUB (Bhutan) |
+| [Name 4] | CST/RUB (Bhutan) |
+| [Name 4] | CST/RUB (Bhutan) |
 
 ---
 
