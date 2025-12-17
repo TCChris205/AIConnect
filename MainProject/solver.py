@@ -531,8 +531,7 @@ def solve_puzzle(csp: Dict) -> Tuple[Optional[Dict], SolverStats]:
 
 # =================================== Parser ===================================
 
-# Global ordinal word mapping (dataset uses at most 6 houses)
-
+# Global ordinal word mapping (dataset uses at most 6 houses in many cases)
 ORDINAL_WORDS = {
     "first": 1,
     "second": 2,
@@ -542,7 +541,17 @@ ORDINAL_WORDS = {
     "sixth": 6,
 }
 
-# Normalization helpers
+# Word numbers for flexible "three houses" / "There are five houses" patterns
+NUM_WORDS = {
+    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6,
+    "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+}
+
+def _word_or_digit_to_int(s: str) -> Optional[int]:
+    s = s.lower().strip()
+    if s.isdigit():
+        return int(s)
+    return NUM_WORDS.get(s)
 
 def normalize_text(s: str) -> str:
     """
@@ -554,32 +563,30 @@ def normalize_text(s: str) -> str:
     - collapse multiple spaces
     """
     s = s.lower()
-    # remove apostrophes (both ' and ’)
-    s = re.sub(r"[’']", "", s)
-    # replace hyphens with spaces
-    s = s.replace("-", " ")
-    # remove the word 'person'
-    s = re.sub(r"\bperson\b", "", s)
-    # collapse multiple spaces
-    s = re.sub(r"\s+", " ", s)
+    s = re.sub(r"[’']", "", s)          # remove apostrophes
+    s = s.replace("-", " ")             # hyphen -> space
+    s = re.sub(r"\bperson\b", "", s)    # remove 'person'
+    s = re.sub(r"\s+", " ", s)          # collapse spaces
     return s.strip()
 
-# Data classes (internal)
 
 @dataclass
 class Clue:
     number: int
     text: str
 
+
 @dataclass
 class PuzzleSkeleton:
     houses: int
     dimensions: Dict[str, List[str]]  # e.g. {"name": [...], "car": [...], ...}
 
+
 @dataclass
 class ItemRef:
     dim: str
     value: str
+
 
 @dataclass
 class Constraint:
@@ -601,106 +608,134 @@ class Constraint:
     position: Optional[int] = None
     distance: Optional[int] = None
 
-# 1. Split puzzle into description + clues
 
-def split_description_and_clues(text: str):
-    """
-    Takes the full puzzle string.
-    Splits into:
-      - desc_text: everything before '## Clues'
-      - clue_lines: non-empty lines in the clues section
-    """
+def split_description_and_clues(text: str) -> tuple[str, List[str]]:
     lines = text.splitlines()
-    desc_lines = []
-    clue_lines = []
+    desc_lines: List[str] = []
+    clue_lines: List[str] = []
     in_clues = False
 
     for line in lines:
         stripped = line.strip()
         if not in_clues:
-            if stripped.startswith("## Clues"):
+            # accept both headers
+            if stripped.lower().startswith("## clues") or stripped.lower() == "clues:" or stripped.lower().startswith("clues:"):
                 in_clues = True
-            else:
-                desc_lines.append(line)
+                # If the line is exactly "Clues:" we skip it.
+                continue
+            desc_lines.append(line)
         else:
-            if stripped:  # skip empty lines
+            if stripped:
                 clue_lines.append(line.rstrip("\n"))
 
     return "\n".join(desc_lines), clue_lines
 
-# 2. Parse description → houses + generic dimensions
-
 def parse_description(desc_text: str) -> PuzzleSkeleton:
     """
-    Parse the description part into:
+    Parse description to:
       - number of houses
-      - dimensions (domain per attribute), fully generic.
-
-    Any bullet line with backtick values is treated as a dimension, e.g.:
-
-      - Each person has a unique car: `Ford F-150`, `Honda Civic`
-      - People use unique phone models: `iphone 13`, `google pixel 6`
-      - Each person has a favorite drink: `tea`, `coffee`
-
-    The dimension key is derived from the last meaningful word before ':'.
+      - dimensions/domains from bullet lines with backticks
     """
-    lines = [l.strip() for l in desc_text.splitlines() if l.strip()]
-
-    # 1) find number of houses
-    m = re.search(r"There are\s+(\d+)\s+houses", desc_text)
-    if not m:
-        raise ValueError("Could not find number of houses")
-    houses = int(m.group(1))
-
+    # ALWAYS define dimensions first (prevents "dimensions not defined" bugs)
     dimensions: Dict[str, List[str]] = {}
 
-    # simple stopword set for deriving dimension names
+    # --- Robust house count detection ---
+    houses: Optional[int] = None
+    txt = desc_text
+
+    # Pattern A: "There are 6 houses" / "There are six houses" (also 'homes')
+    m = re.search(
+        r"there\s+are\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+(houses|homes)\b",
+        txt,
+        re.IGNORECASE,
+    )
+    if m:
+        houses = _word_or_digit_to_int(m.group(1))
+
+    # Pattern B: "Three friends live in three houses in a row"
+    if houses is None:
+        m = re.search(
+            r"(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+\w+\s+live\s+in\s+"
+            r"(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+(houses|homes)\b",
+            txt,
+            re.IGNORECASE,
+        )
+        if m:
+            houses = _word_or_digit_to_int(m.group(2))
+
+    # Pattern C: "numbered 1 to 6"
+    if houses is None:
+        m = re.search(r"numbered\s+1\s+to\s+(\d+)", txt, re.IGNORECASE)
+        if m:
+            houses = int(m.group(1))
+
+    # --- Parse dimensions/domains from bullet lines ---
+    lines = [l.strip() for l in desc_text.splitlines() if l.strip()]
+
     STOPWORDS = {
         "each", "person", "people", "has", "have", "a", "an",
         "unique", "different", "favorite", "various", "distinct",
-        "their", "his", "her", "the", "with", "of", "style", "type"
+        "their", "his", "her", "the", "with", "of", "style", "type",
+        "lives", "live", "in"
     }
 
+    def _split_csv_list(s: str) -> List[str]:
+        s = s.strip().strip(".")
+        return [p.strip() for p in s.split(",") if p.strip()]
+
     for line in lines:
-        if not line.startswith("-"):
+        s = line.strip()
+        if not s:
             continue
 
-        # extract values in backticks
-        values = re.findall(r"`([^`]+)`", line)
-        if not values:
+        # --- Case 1: old ZebraLogicBench bullet lines with backticks ---
+        if s.startswith("-"):
+            values = re.findall(r"`([^`]+)`", s)
+            if not values:
+                continue
+
+            without_dash = s[1:].strip()
+            before_colon = without_dash.split(":", 1)[0]
+
+            tokens = [t.strip().lower().rstrip(".,;:") for t in before_colon.split()]
+            content_tokens = [t for t in tokens if t and t not in STOPWORDS]
+
+            if content_tokens:
+                dim_key = content_tokens[-1]
+                if dim_key.endswith("s") and not dim_key.endswith("ss"):
+                    dim_key = dim_key[:-1]
+            else:
+                dim_key = f"attr_{len(dimensions) + 1}"
+
+            dimensions[dim_key] = [v.strip() for v in values]
             continue
 
-        # part before ':' describes the attribute
-        without_dash = line[1:].strip()            # remove leading '-'
-        before_colon = without_dash.split(":", 1)[0]
+        # --- Case 2: new format lines like "Colors: orange, blue, green." ---
+        if ":" in s:
+            left, right = s.split(":", 1)
+            dim_key = left.strip().lower().rstrip(".")
+            values = _split_csv_list(right)
 
-        tokens = [t.strip().lower().rstrip(".,;:")
-                  for t in before_colon.split()]
-        content_tokens = [t for t in tokens if t and t not in STOPWORDS]
+            # keep only real domain lines
+            if len(values) >= 2:
+                if dim_key.endswith("s") and not dim_key.endswith("ss"):
+                    dim_key = dim_key[:-1]
+                dimensions[dim_key] = values
 
-        if content_tokens:
-            # pick last meaningful word, e.g. "car", "job", "model", "drink", "color"
-            dim_key = content_tokens[-1]
-            # trivial plural handling: trim trailing 's' if present
-            if dim_key.endswith("s") and not dim_key.endswith("ss"):
-                dim_key = dim_key[:-1]
+
+    # Fallback: infer houses from any dimension length
+    if houses is None:
+        if dimensions:
+            first_dim = next(iter(dimensions))
+            houses = len(dimensions[first_dim])
         else:
-            dim_key = f"attr_{len(dimensions) + 1}"
-
-        dimensions[dim_key] = [v.strip() for v in values]
+            raise ValueError("Could not determine number of houses (and could not infer from domains).")
 
     return PuzzleSkeleton(houses=houses, dimensions=dimensions)
 
-# 3. Clue lines → Clue objects
 
 def extract_clues(clue_lines: List[str]) -> List[Clue]:
-    """
-    Turn numbered clue lines into Clue(number, text).
-    Supports multi-line clues.
-
-    Lines like: '1. The German is Bob.'
-    start a new clue; following lines (without leading number) are appended.
-    """
+    """Turn numbered clue lines into Clue(number, text). Supports multi-line clues."""
     pattern = re.compile(r"^\s*(\d+)\.\s*(.*)$")
     clues: List[Clue] = []
     current_number: Optional[int] = None
@@ -709,207 +744,125 @@ def extract_clues(clue_lines: List[str]) -> List[Clue]:
     for line in clue_lines:
         m = pattern.match(line.strip())
         if m:
-            # finish previous clue
             if current_number is not None:
                 full_text = " ".join(p.strip() for p in current_parts).strip()
                 clues.append(Clue(number=current_number, text=full_text))
-
             current_number = int(m.group(1))
             current_parts = [m.group(2)]
         else:
-            # continuation of the current clue
             if current_number is not None:
                 current_parts.append(line.strip())
 
-    # add last clue
     if current_number is not None:
         full_text = " ".join(p.strip() for p in current_parts).strip()
         clues.append(Clue(number=current_number, text=full_text))
 
     return clues
 
-# 4. Value index (find items in clue text)
 
 def build_value_index(dimensions: Dict[str, List[str]]) -> Dict[str, ItemRef]:
     """
-    Build a lookup from normalized value string to ItemRef.
-    Also adds simple adjective variants (…ish) so that e.g.
-    'swede' can be matched by 'swedish person'.
+    Build lookup normalized value -> ItemRef.
+    Adds simple adjective variants (root-ish).
     """
     index: Dict[str, ItemRef] = {}
-
     for dim, values in dimensions.items():
         for v in values:
-            norm = normalize_text(v)  # e.g. 'swede', 'bachelors degree'
+            norm = normalize_text(v)
             ref = ItemRef(dim=dim, value=v)
             index[norm] = ref
 
-            # Heuristic adjective forms:
-            # 'swede' -> 'swedish', 'dane' -> 'danish', 'brit' -> 'british'
-            # This is generic and not nationality-specific.
             root = norm
             variants = []
-
             if root.endswith("e"):
-                # swede -> swed + ish = swedish, dane -> danish
                 variants.append(root[:-1] + "ish")
-
-            # brit -> british, etc. (for some values this will just be unused)
             variants.append(root + "ish")
 
             for var in variants:
-                if var not in index:
-                    index[var] = ref
-
+                index.setdefault(var, ref)
     return index
 
 
 def find_items_in_text(value_index: Dict[str, ItemRef], text: str) -> List[ItemRef]:
-    """
-    Find all known values in the clue text using normalized strings.
-    """
+    """Find all known values in the clue text using normalized substring match."""
     t_norm = normalize_text(text)
     found: List[ItemRef] = []
     for key, item in value_index.items():
-        if key in t_norm:
+        if key and key in t_norm:
             found.append(item)
     return found
 
-# 5. Single clue → Constraint
 
 def parse_single_clue(clue: Clue, value_index: Dict[str, ItemRef]) -> Optional[Constraint]:
     """
-    Convert a single clue sentence into a Constraint object.
-    Supported patterns:
-      - "X is in the first/second/.../sixth house"          -> position_equals
-      - "X is not in the first/second/.../sixth house"      -> not_position_equals
-      - "X is in the 1st/2nd/... house"                     -> position_equals
-      - "X is not in the 1st/2nd/... house"                 -> not_position_equals
-      - "There is one house between X and Y"                -> distance=2
-      - "There are two houses between X and Y"              -> distance=3
-      - "X is directly left of Y"                           -> offset (distance=1)
-      - "X is somewhere to the left of Y"                   -> left_of
-      - "X is somewhere to the right of Y"                  -> right_of
-      - "X and Y are next to each other"                    -> next_to
-      - "X is Y" / "The person who ... is Z" (two items)    -> same_house
+    Convert one clue sentence into a Constraint.
+    (Same patterns as your current parser.)
     """
     t = clue.text.lower()
 
-    # 1) Negative position with word ordinals: "X is not in the fourth house."
-    m_not_pos_word = re.search(
-        r"is not in the (first|second|third|fourth|fifth|sixth) house",
-        t
-    )
+    m_not_pos_word = re.search(r"is not in the (first|second|third|fourth|fifth|sixth) house", t)
     if m_not_pos_word:
-        word = m_not_pos_word.group(1)
-        pos = ORDINAL_WORDS[word]
+        pos = ORDINAL_WORDS[m_not_pos_word.group(1)]
         before = t[:m_not_pos_word.start()]
         items = find_items_in_text(value_index, before)
         if items:
-            return Constraint(
-                type="not_position_equals",
-                items=[items[0]],
-                position=pos,
-            )
+            return Constraint(type="not_position_equals", items=[items[0]], position=pos)
 
-    # 2) Positive position with word ordinals: "X is in the first/third/sixth house."
-    m_pos_word = re.search(
-        r"is in the (first|second|third|fourth|fifth|sixth) house",
-        t
-    )
+    m_pos_word = re.search(r"is in the (first|second|third|fourth|fifth|sixth) house", t)
     if m_pos_word:
-        word = m_pos_word.group(1)
-        pos = ORDINAL_WORDS[word]
+        pos = ORDINAL_WORDS[m_pos_word.group(1)]
         before = t[:m_pos_word.start()]
         items = find_items_in_text(value_index, before)
         if items:
-            return Constraint(
-                type="position_equals",
-                items=[items[0]],
-                position=pos,
-            )
+            return Constraint(type="position_equals", items=[items[0]], position=pos)
 
-    # 3) Negative position with digits: "X is not in the 4th house."
     m_not_pos = re.search(r"is not in the (\d+)(st|nd|rd|th)? house", t)
     if m_not_pos:
         pos = int(m_not_pos.group(1))
         before = t[:m_not_pos.start()]
         items = find_items_in_text(value_index, before)
         if items:
-            return Constraint(
-                type="not_position_equals",
-                items=[items[0]],
-                position=pos,
-            )
+            return Constraint(type="not_position_equals", items=[items[0]], position=pos)
 
-    # 4) Positive position with digits: "X is in the 2nd house."
     m_pos = re.search(r"in the (\d+)(st|nd|rd|th)? house", t)
     if m_pos:
         pos = int(m_pos.group(1))
         before = t[:m_pos.start()]
         items = find_items_in_text(value_index, before)
         if items:
-            return Constraint(
-                type="position_equals",
-                items=[items[0]],
-                position=pos,
-            )
+            return Constraint(type="position_equals", items=[items[0]], position=pos)
 
-    # 5) Distance: "There is one house between X and Y." -> distance=2
     if "one house between" in t:
         items = find_items_in_text(value_index, t)
         if len(items) >= 2:
-            return Constraint(
-                type="distance",
-                items=items[:2],
-                distance=2,
-            )
+            return Constraint(type="distance", items=items[:2], distance=2)
 
-    # "There are two houses between X and Y." -> distance=3
     if "two houses between" in t:
         items = find_items_in_text(value_index, t)
         if len(items) >= 2:
-            return Constraint(
-                type="distance",
-                items=items[:2],
-                distance=3,
-            )
+            return Constraint(type="distance", items=items[:2], distance=3)
 
-    # 6) Directly left: "X is directly left of Y." -> offset
     if "directly left of" in t:
         left_part, right_part = t.split("directly left of", 1)
         left_items = find_items_in_text(value_index, left_part)
         right_items = find_items_in_text(value_index, right_part)
         if left_items and right_items:
-            return Constraint(
-                type="offset",
-                items=[left_items[0], right_items[0]],
-                distance=1,
-            )
+            return Constraint(type="offset", items=[left_items[0], right_items[0]], distance=1)
 
-    # 7) Somewhere to the left: "X is somewhere to the left of Y." -> left_of
     if "somewhere to the left of" in t:
         left_part, right_part = t.split("somewhere to the left of", 1)
         left_items = find_items_in_text(value_index, left_part)
         right_items = find_items_in_text(value_index, right_part)
         if left_items and right_items:
-            return Constraint(
-                type="left_of",
-                items=[left_items[0], right_items[0]],
-            )
+            return Constraint(type="left_of", items=[left_items[0], right_items[0]])
 
-    # 8) Somewhere to the right: "X is somewhere to the right of Y." -> right_of
     if "somewhere to the right of" in t:
         left_part, right_part = t.split("somewhere to the right of", 1)
         left_items = find_items_in_text(value_index, left_part)
         right_items = find_items_in_text(value_index, right_part)
         if left_items and right_items:
-            return Constraint(
-                type="right_of",
-                items=[left_items[0], right_items[0]],
-            )
+            return Constraint(type="right_of", items=[left_items[0], right_items[0]])
 
-    # 9) Next to each other: "X and Y are next to each other." -> next_to
     if "next to each other" in t:
         before = t.split("next to each other", 1)[0]
         parts = before.split(" and ")
@@ -917,48 +870,44 @@ def parse_single_clue(clue: Clue, value_index: Dict[str, ItemRef]) -> Optional[C
             items_a = find_items_in_text(value_index, parts[0])
             items_b = find_items_in_text(value_index, parts[1])
             if items_a and items_b:
-                return Constraint(
-                    type="next_to",
-                    items=[items_a[0], items_b[0]],
-                )
+                return Constraint(type="next_to", items=[items_a[0], items_b[0]])
 
-    # 10) Special same_house: if exactly 2 known values appear in the sentence
     all_items = find_items_in_text(value_index, t)
     if len(all_items) == 2:
-        return Constraint(
-            type="same_house",
-            items=[all_items[0], all_items[1]],
-        )
+        return Constraint(type="same_house", items=[all_items[0], all_items[1]])
 
-    # 11) Generic fallback: "X is Y." / "X is the Y."
-    if (
-        " is " in t
-        and "between" not in t
-        and "left of" not in t
-        and "right of" not in t
-        and "next to" not in t
-        and "house" not in t
-    ):
+        # immediately to the left of  -> X is directly left of Y
+    if "immediately to the left of" in t:
+        left_part, right_part = t.split("immediately to the left of", 1)
+        left_items = find_items_in_text(value_index, left_part)
+        right_items = find_items_in_text(value_index, right_part)
+        if left_items and right_items:
+            return Constraint(type="offset", items=[left_items[0], right_items[0]], distance=1)
+
+    # immediately to the right of -> X is directly right of Y
+    if "immediately to the right of" in t:
+        left_part, right_part = t.split("immediately to the right of", 1)
+        left_items = find_items_in_text(value_index, left_part)
+        right_items = find_items_in_text(value_index, right_part)
+        if left_items and right_items:
+            # represent "X right of Y" as "Y directly left of X"
+            return Constraint(type="offset", items=[right_items[0], left_items[0]], distance=1)
+
+
+    if (" is " in t and "between" not in t and "left of" not in t and "right of" not in t
+            and "next to" not in t and "house" not in t):
         left, right = t.split(" is ", 1)
         left_items = find_items_in_text(value_index, left)
         right_clean = right.replace("the ", "").replace(".", "").strip()
         right_items = find_items_in_text(value_index, right_clean)
         if left_items and right_items:
-            return Constraint(
-                type="same_house",
-                items=[left_items[0], right_items[0]],
-            )
+            return Constraint(type="same_house", items=[left_items[0], right_items[0]])
 
-    # nothing matched
     return None
 
 
-def clues_to_constraint_objects(dimensions: Dict[str, List[str]],
-                                clues: List[Clue]) -> List[Constraint]:
-    """
-    Apply parse_single_clue to all clues.
-    Returns a list of internal Constraint objects.
-    """
+def clues_to_constraint_objects(dimensions: Dict[str, List[str]], clues: List[Clue]) -> List[Constraint]:
+    """Parse all clues into Constraint objects; print warnings for unparsed clues."""
     value_index = build_value_index(dimensions)
     constraints: List[Constraint] = []
     for clue in clues:
@@ -969,13 +918,9 @@ def clues_to_constraint_objects(dimensions: Dict[str, List[str]],
             constraints.append(c)
     return constraints
 
-# 6. Constraints → expression dict
 
 def constraint_to_expression_dict(c: Constraint) -> dict:
-    """
-    Convert a Constraint object into the final dictionary format
-    stored under 'expression'.
-    """
+    """Convert internal Constraint object into dict under 'expression'."""
     return {
         "type": c.type,
         "items": [{"dim": it.dim, "value": it.value} for it in c.items],
@@ -983,33 +928,61 @@ def constraint_to_expression_dict(c: Constraint) -> dict:
         "distance": c.distance,
     }
 
-# 7. Main function: puzzle string → CSP object
 
 def puzzle_text_to_csp(text: str) -> Dict:
     """
-    Takes the puzzle string (as stored in the CSV 'puzzle' column)
-    and returns a CSP object with:
-      - 'houses'
-      - 'variables' (dimensions/domains)
-      - 'constraints': list of { "expression": { ... } }
+    Puzzle string -> CSP dict:
+      - houses
+      - variables (dimensions/domains)
+      - constraints: list of {"expression": {...}}
     """
-    # 1) split description and clues
     desc_text, clue_lines = split_description_and_clues(text)
-
-    # 2) parse description
     skeleton = parse_description(desc_text)
-
-    # 3) extract clues
     clues = extract_clues(clue_lines)
 
-    # 4) create internal constraint objects
+def infer_names_from_clues(clues, houses: int):
+    blacklist = {
+        "The", "House", "Clues", "Colors", "Pets",
+        "There", "Each", "Three", "Four", "Five", "Six",
+        "Orange", "Purple", "Green", "Blue", "Red",
+        "Yellow", "White", "Black"
+    }
+    found = []
+    for c in clues:
+        tokens = re.findall(r"\b[A-Z][a-z]+\b", c.text)
+        for t in tokens:
+            if t not in blacklist:
+                found.append(t)
+
+    uniq = []
+    seen = set()
+    for n in found:
+        if n not in seen:
+            seen.add(n)
+            uniq.append(n)
+
+    return uniq[:houses]
+
+
+def puzzle_text_to_csp(text: str) -> Dict:
+    """
+    Puzzle string -> CSP dict:
+      - houses
+      - variables (dimensions/domains)
+      - constraints: list of {"expression": {...}}
+    """
+    desc_text, clue_lines = split_description_and_clues(text)
+    skeleton = parse_description(desc_text)
+    clues = extract_clues(clue_lines)
+
+    if "name" not in skeleton.dimensions:
+        names = infer_names_from_clues(clues, skeleton.houses)
+        if names:
+            skeleton.dimensions["name"] = names
+
     constraint_objects = clues_to_constraint_objects(skeleton.dimensions, clues)
+    constraints = [{"expression": constraint_to_expression_dict(c)} for c in constraint_objects]
 
-    # 5) convert to external "expression" dictionaries
-    constraints = [{"expression": constraint_to_expression_dict(c)}
-                   for c in constraint_objects]
-
-    # 6) final CSP representation
     return {
         "houses": skeleton.houses,
         "variables": skeleton.dimensions,
@@ -1357,6 +1330,24 @@ def main():
     
     args = parser.parse_args()
     
+    df = load_dataset(args.data)
+    df = normalize_dataset(df)
+
+# Debug info (remove later)
+
+    print("Using dataset:", args.data)
+    print("Columns after normalize:", list(df.columns))
+
+    sample = df.iloc[0]["puzzle"]
+    print("Puzzle type:", type(sample))
+    print("Puzzle preview:", str(sample)[:250].replace("\n", "\\n"))
+
+    # Quick sanity check: does it look like a Zebra puzzle?
+    s = str(sample).lower()
+    print("Looks like puzzle:", ("there are" in s and "houses" in s and "## clues" in s))
+
+# Debug info end (remove later)
+
     # Load dataset
     df = load_dataset(args.data)
     
@@ -1415,6 +1406,95 @@ def run():
     print_summary(results)
     
     return df, results
+
+# Normalize dataset after loading
+
+def _looks_like_puzzle_text(x: Any) -> bool:
+    if not isinstance(x, str):
+        return False
+    t = x.strip()
+    return ("## clues" in t.lower()) and ("there are" in t.lower()) and ("houses" in t.lower())
+
+def normalize_dataset(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Ensure the dataframe has at least:
+      - df["puzzle"]   (string puzzle text)
+      - df["solution"] (optional)
+      - df["id"]       (optional)
+    Works even if the parquet uses different column names or stores dict/JSON.
+    """
+    # 1) If there's a single column that stores dicts/JSON with keys like "puzzle"
+    for col in df.columns:
+        sample = df[col].dropna()
+        if sample.empty:
+            continue
+        v = sample.iloc[0]
+
+        # dict case
+        if isinstance(v, dict) and ("puzzle" in v or "text" in v or "problem" in v):
+            # expand dict column into separate columns
+            expanded = pd.json_normalize(df[col])
+            # keep original columns too (id might be outside)
+            for k in expanded.columns:
+                if k not in df.columns:
+                    df[k] = expanded[k]
+
+        # JSON string case
+        if isinstance(v, str) and v.strip().startswith("{") and '"puzzle"' in v:
+            try:
+                obj0 = json.loads(v)
+                if isinstance(obj0, dict):
+                    expanded = pd.json_normalize(df[col].apply(lambda s: json.loads(s) if isinstance(s, str) else {}))
+                    for k in expanded.columns:
+                        if k not in df.columns:
+                            df[k] = expanded[k]
+            except Exception:
+                pass
+
+    # 2) Determine which column is the puzzle text
+    if "puzzle" not in df.columns:
+        # common alternatives
+        candidates = ["text", "problem", "prompt", "puzzle_text", "question", "input"]
+        for c in candidates:
+            if c in df.columns:
+                df["puzzle"] = df[c].astype(str)
+                break
+
+    # 3) If still no puzzle column, auto-detect by content
+    if "puzzle" not in df.columns:
+        for col in df.columns:
+            # only check object-like columns
+            if df[col].dtype != "object":
+                continue
+            sample = df[col].dropna().astype(str).head(20)
+            if any(_looks_like_puzzle_text(s) for s in sample):
+                df["puzzle"] = df[col].astype(str)
+                break
+
+    # 4) Optional: map solution column similarly
+    if "solution" not in df.columns:
+        for c in ["answer", "target", "ground_truth", "gt", "label", "solutions"]:
+            if c in df.columns:
+                df["solution"] = df[c]
+                break
+
+    # 5) Optional: ensure id exists
+    if "id" not in df.columns:
+        if "puzzle_id" in df.columns:
+            df["id"] = df["puzzle_id"]
+        else:
+            df["id"] = [f"idx_{i}" for i in range(len(df))]
+
+    # Final sanity check
+    if "puzzle" not in df.columns:
+        raise ValueError(
+            "Could not find puzzle text column in dataset. "
+            f"Columns are: {list(df.columns)}"
+        )
+
+    return df
+
+# end new changes
 
 if __name__ == "__main__":
     main()
