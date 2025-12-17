@@ -28,7 +28,7 @@ class SolverStats:
     backtracks: int = 0
     nodes_explored: int = 0
     arc_revisions: int = 0
-    steps = int = 0
+    steps: int = 0      #changed from steps = int = 0 (syntax error)
 
 @dataclass
 class CSPSolver:
@@ -1301,6 +1301,43 @@ def print_summary(results: List[PuzzleResult]):
         for r in failed[:10]:  # Show first 10
             print(f"  - {r.puzzle_id}: {'Parse error' if r.error else 'Incorrect solution'}")
 
+import csv
+def save_results_to_csv(results: List[PuzzleResult], filepath: str = "results.csv"):
+    """
+    Save evaluation results to CSV file.
+    
+    Columns: puzzle_id, solved, correct, time_seconds, nodes_explored, 
+             backtracks, arc_revisions, steps, solution_json, error
+    """
+    with open(filepath, 'w', newline='') as f:
+        writer = csv.writer(f)
+        
+        # Header
+        writer.writerow([
+            'puzzle_id', 'solved', 'correct', 'time_seconds',
+            'nodes_explored', 'backtracks', 'arc_revisions', 'steps', 'error'
+        ])
+        
+        # Data rows
+        for r in results:
+            #converting solution (dict into json str)
+            solution_str = json.dumps(r.solution) if r.solution else ''
+            writer.writerow([
+                r.puzzle_id,
+                r.solved,
+                r.correct,
+                f"{r.time_seconds:.4f}",
+                r.stats.nodes_explored,
+                r.stats.backtracks,
+                r.stats.arc_revisions,
+                r.stats.steps,
+                solution_str,
+                r.error or ''
+            ])
+    
+    print(f"Results saved to {filepath}")
+
+
 def main():
     """Main entry point for the solver."""
     import argparse
@@ -1360,6 +1397,7 @@ def main():
         verbose = args.verbose and not args.quiet
         results = run_evaluation(df, max_puzzles=args.max, verbose=verbose)
         print_summary(results)
+        save_results_to_csv(results, "evaluation_results.csv")
 
 # Alternative entry point for direct module execution
 def run():
