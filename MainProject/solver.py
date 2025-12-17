@@ -1302,7 +1302,46 @@ def print_summary(results: List[PuzzleResult]):
             print(f"  - {r.puzzle_id}: {'Parse error' if r.error else 'Incorrect solution'}")
 
 import csv
-def save_results_to_csv(results: List[PuzzleResult], filepath: str = "results.csv"):
+
+import csv
+
+def convert_solution_to_grid_format(solution: Optional[Dict], variables: Dict[str, List[str]]) -> str:
+    """
+    Convert our solution format to the required grid_solution format.
+    
+    Required:   {"header": ["House", "Name", "Car"], "rows": [["1", "Alice", "Ford"], ...]}
+    """
+    if solution is None:
+        return ""
+    
+    # Get dimensions from solution 
+    dims = set()
+    for house_attrs in solution.values():
+        dims.update(house_attrs.keys())
+    dims = sorted(dims)
+    
+    # Build header: "House" + capitalized dimension names
+    header = ["House"] + [dim.capitalize() for dim in dims]
+    
+    # Build rows: each house as a list of strings
+    rows = []
+    for house_num in sorted(solution.keys()):
+        row = [str(house_num)]
+        for dim in dims:
+            val = solution[house_num].get(dim, "")
+            row.append(str(val))
+        rows.append(row)
+    
+    # Create the grid_solution dict
+    grid_solution = {
+        "header": header,
+        "rows": rows
+    }
+    
+    # Convert to JSON string (this handles the escaping)
+    return json.dumps(grid_solution)
+
+def save_results_to_csv_detailed(results: List[PuzzleResult], filepath: str = "results.csv"):
     """
     Save evaluation results to CSV file.
     
@@ -1337,6 +1376,33 @@ def save_results_to_csv(results: List[PuzzleResult], filepath: str = "results.cs
     
     print(f"Results saved to {filepath}")
 
+def save_results_to_csv(results: List[PuzzleResult], filepath: str = "results.csv"):
+    """
+    Save evaluation results to CSV file in the REQUIRED format:
+    
+    Columns: id, grid_solution, steps
+    
+    grid_solution format: {"header": [...], "rows": [[...], ...]}
+    """
+    with open(filepath, 'w', newline='') as f:
+        writer = csv.writer(f)
+        
+        # Header (exactly as required)
+        writer.writerow(['id', 'grid_solution', 'steps'])
+        
+        # Data rows
+        for r in results:
+            # Convert solution to required grid format
+            grid_solution = convert_solution_to_grid_format(r.solution, {})
+            
+            writer.writerow([
+                r.puzzle_id,                    # id
+                grid_solution,                  # grid_solution (JSON string)
+                r.stats.steps                   # steps
+            ])
+    
+    print(f"Results saved to {filepath}")
+    print(f"Total rows: {len(results)} (+ 1 header = {len(results) + 1} lines)")
 
 def main():
     """Main entry point for the solver."""
@@ -1398,6 +1464,11 @@ def main():
         results = run_evaluation(df, max_puzzles=args.max, verbose=verbose)
         print_summary(results)
         save_results_to_csv(results, "evaluation_results.csv")
+        
+        # verifying the row count 
+        if len(results) != 100:
+            print(f"\n⚠️  WARNING: exceeded 100 puzzles, got {len(results)}")
+            print(f"    CSV has {len(results) + 1} lines (including header)")
 
 # Alternative entry point for direct module execution
 def run():
