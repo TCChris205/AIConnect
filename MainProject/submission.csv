@@ -1,0 +1,101 @@
+id,grid_solution,steps
+test-3x3-001,'{}',0
+test-3x3-002,'{}',0
+test-3x3-003,'{}',0
+test-3x3-004,'{}',0
+test-3x3-005,"{""header"": [""House"", ""Color"", ""Name"", ""Pet""], ""rows"": [[""1"", ""green"", """", ""cat""], [""2"", ""white"", ""Ivan"", ""fish""], [""3"", ""blue"", ""Mallory"", ""turtle""]]}",9
+test-3x3-006,'{}',0
+test-3x3-007,'{}',0
+test-3x3-008,"{""header"": [""House"", ""Color"", ""Name"", ""Pet""], ""rows"": [[""1"", ""white"", ""Grace"", ""hamster""], [""2"", ""yellow"", ""Alice"", ""fish""], [""3"", ""blue"", ""Eve"", ""rabbit""]]}",10
+test-3x3-009,'{}',0
+test-3x3-010,'{}',0
+test-3x3-011,'{}',0
+test-3x3-012,'{}',0
+test-3x3-013,"{""header"": [""House"", ""Color"", ""Name"", ""Pet""], ""rows"": [[""1"", ""orange"", ""Frank"", ""bird""], [""2"", ""blue"", ""Bob"", ""rabbit""], [""3"", ""purple"", ""Grace"", ""dog""]]}",10
+test-3x3-014,'{}',0
+test-3x3-015,'{}',0
+test-3x3-016,'{}',0
+test-3x3-017,'{}',0
+test-3x3-018,'{}',0
+test-3x3-019,'{}',0
+test-3x3-020,'{}',0
+test-3x3-021,'{}',0
+test-3x3-022,"{""header"": [""House"", ""Color"", ""Name"", ""Pet""], ""rows"": [[""1"", ""green"", ""Bob"", ""bird""], [""2"", ""white"", ""Judy"", ""dog""], [""3"", ""purple"", """", ""cat""]]}",9
+test-3x3-023,'{}',0
+test-3x3-024,'{}',0
+test-3x3-025,'{}',0
+test-3x3-026,"{""header"": [""House"", ""Color"", ""Name"", ""Pet""], ""rows"": [[""1"", ""green"", """", ""dog""], [""2"", ""red"", ""Ivan"", ""cat""], [""3"", ""yellow"", ""Bob"", ""rabbit""]]}",9
+test-3x3-027,'{}',0
+test-3x3-028,"{""header"": [""House"", ""Color"", ""Name"", ""Pet""], ""rows"": [[""1"", ""purple"", ""Heidi"", ""dog""], [""2"", ""orange"", ""Eve"", ""rabbit""], [""3"", ""yellow"", ""Frank"", ""bird""]]}",10
+test-3x3-029,'{}',0
+test-3x3-030,'{}',0
+test-3x3-031,'{}',0
+test-3x3-032,'{}',0
+test-3x3-033,'{}',0
+test-3x3-034,'{}',0
+test-3x3-035,'{}',0
+test-3x3-036,'{}',0
+test-3x3-037,'{}',0
+test-3x3-038,'{}',0
+test-3x3-039,"{""header"": [""House"", ""Color"", ""Name"", ""Pet""], ""rows"": [[""1"", ""yellow"", ""Grace"", ""dog""], [""2"", ""orange"", """", ""bird""], [""3"", ""white"", ""Judy"", ""hamster""]]}",9
+test-3x3-040,'{}',0
+test-3x3-041,'{}',0
+test-3x3-042,'{}',0
+test-3x3-043,'{}',0
+test-3x3-044,'{}',0
+test-3x3-045,"{""header"": [""House"", ""Color"", ""Name"", ""Pet""], ""rows"": [[""1"", ""green"", ""Alice"", ""rabbit""], [""2"", ""white"", ""Eve"", ""turtle""], [""3"", ""purple"", ""Bob"", ""fish""]]}",10
+test-3x3-046,'{}',0
+test-3x3-047,'{}',0
+test-3x3-048,"{""header"": [""House"", ""Color"", ""Name"", ""Pet""], ""rows"": [[""1"", ""white"", ""Bob"", ""bird""], [""2"", ""green"", ""Grace"", ""dog""], [""3"", ""purple"", ""Judy"", ""turtle""]]}",10
+test-3x3-049,"{""header"": [""House"", ""Color"", ""Name"", ""Pet""], ""rows"": [[""1"", ""green"", ""Alice"", ""bird""], [""2"", ""orange"", ""Bob"", ""hamster""], [""3"", ""blue"", ""Carol"", ""fish""]]}",10
+test-3x3-050,'{}',0
+test-3x3-051,'{}',0
+test-3x3-052,'{}',0
+test-3x3-053,'{}',0
+test-3x3-054,"{""header"": [""House"", ""Color"", ""Name"", ""Pet""], ""rows"": [[""1"", ""yellow"", ""Alice"", ""turtle""], [""2"", ""purple"", ""Bob"", ""cat""], [""3"", ""white"", """", ""fish""]]}",9
+test-3x3-055,'{}',0
+test-3x3-056,'{}',0
+test-3x3-057,'{}',0
+test-3x3-058,'{}',0
+test-3x3-059,'{}',0
+test-3x3-060,'{}',0
+test-3x3-061,'{}',0
+test-3x3-062,"{""header"": [""House"", ""Color"", ""Name"", ""Pet""], ""rows"": [[""1"", ""orange"", ""Heidi"", ""fish""], [""2"", ""green"", ""Ivan"", ""dog""], [""3"", ""purple"", """", ""hamster""]]}",9
+test-3x3-063,'{}',0
+test-3x3-064,'{}',0
+test-3x3-065,'{}',0
+test-3x3-066,'{}',0
+test-3x3-067,"{""header"": [""House"", ""Color"", ""Name"", ""Pet""], ""rows"": [[""1"", ""green"", ""Heidi"", ""hamster""], [""2"", ""blue"", ""Bob"", ""fish""], [""3"", ""orange"", ""Frank"", ""dog""]]}",10
+test-3x3-068,'{}',0
+test-3x3-069,'{}',0
+test-3x3-070,'{}',0
+test-3x3-071,'{}',0
+test-3x3-072,'{}',0
+test-3x3-073,'{}',0
+test-3x3-074,'{}',0
+test-3x3-075,'{}',0
+test-3x3-076,'{}',0
+test-3x3-077,'{}',0
+test-3x3-078,'{}',0
+test-3x3-079,'{}',0
+test-3x3-080,'{}',0
+test-3x3-081,'{}',0
+test-3x3-082,'{}',0
+test-3x3-083,'{}',0
+test-3x3-084,'{}',0
+test-3x3-085,"{""header"": [""House"", ""Color"", ""Name"", ""Pet""], ""rows"": [[""1"", ""orange"", ""Bob"", ""fish""], [""2"", ""purple"", """", ""cat""], [""3"", ""white"", """", ""bird""]]}",8
+test-3x3-086,'{}',0
+test-3x3-087,'{}',0
+test-3x3-088,'{}',0
+test-3x3-089,"{""header"": [""House"", ""Color"", ""Name"", ""Pet""], ""rows"": [[""1"", ""green"", """", ""dog""], [""2"", ""orange"", ""Bob"", ""rabbit""], [""3"", ""yellow"", """", ""fish""]]}",8
+test-3x3-090,'{}',0
+test-3x3-091,'{}',0
+test-3x3-092,'{}',0
+test-3x3-093,'{}',0
+test-3x3-094,'{}',0
+test-3x3-095,'{}',0
+test-3x3-096,'{}',0
+test-3x3-097,"{""header"": [""House"", ""Color"", ""Name"", ""Pet""], ""rows"": [[""1"", ""green"", ""David"", ""rabbit""], [""2"", ""yellow"", ""Bob"", ""turtle""], [""3"", ""purple"", """", ""fish""]]}",9
+test-3x3-098,'{}',0
+test-3x3-099,'{}',0
+test-3x3-100,'{}',0

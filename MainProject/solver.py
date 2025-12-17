@@ -1,10 +1,10 @@
 from typing import Dict, List, Set, Literal, Tuple, Optional, Any
-from copy import deepcopy
 from dataclasses import dataclass, field
 import re
 import pandas as pd
 import json
 import time
+import csv
 
 # =================================== Solver ===================================
 
@@ -569,24 +569,20 @@ def normalize_text(s: str) -> str:
     s = re.sub(r"\s+", " ", s)          # collapse spaces
     return s.strip()
 
-
 @dataclass
 class Clue:
     number: int
     text: str
-
 
 @dataclass
 class PuzzleSkeleton:
     houses: int
     dimensions: Dict[str, List[str]]  # e.g. {"name": [...], "car": [...], ...}
 
-
 @dataclass
 class ItemRef:
     dim: str
     value: str
-
 
 @dataclass
 class Constraint:
@@ -733,7 +729,6 @@ def parse_description(desc_text: str) -> PuzzleSkeleton:
 
     return PuzzleSkeleton(houses=houses, dimensions=dimensions)
 
-
 def extract_clues(clue_lines: List[str]) -> List[Clue]:
     """Turn numbered clue lines into Clue(number, text). Supports multi-line clues."""
     pattern = re.compile(r"^\s*(\d+)\.\s*(.*)$")
@@ -759,7 +754,6 @@ def extract_clues(clue_lines: List[str]) -> List[Clue]:
 
     return clues
 
-
 def build_value_index(dimensions: Dict[str, List[str]]) -> Dict[str, ItemRef]:
     """
     Build lookup normalized value -> ItemRef.
@@ -782,7 +776,6 @@ def build_value_index(dimensions: Dict[str, List[str]]) -> Dict[str, ItemRef]:
                 index.setdefault(var, ref)
     return index
 
-
 def find_items_in_text(value_index: Dict[str, ItemRef], text: str) -> List[ItemRef]:
     """Find all known values in the clue text using normalized substring match."""
     t_norm = normalize_text(text)
@@ -791,7 +784,6 @@ def find_items_in_text(value_index: Dict[str, ItemRef], text: str) -> List[ItemR
         if key and key in t_norm:
             found.append(item)
     return found
-
 
 def parse_single_clue(clue: Clue, value_index: Dict[str, ItemRef]) -> Optional[Constraint]:
     """
@@ -905,7 +897,6 @@ def parse_single_clue(clue: Clue, value_index: Dict[str, ItemRef]) -> Optional[C
 
     return None
 
-
 def clues_to_constraint_objects(dimensions: Dict[str, List[str]], clues: List[Clue]) -> List[Constraint]:
     """Parse all clues into Constraint objects; print warnings for unparsed clues."""
     value_index = build_value_index(dimensions)
@@ -918,7 +909,6 @@ def clues_to_constraint_objects(dimensions: Dict[str, List[str]], clues: List[Cl
             constraints.append(c)
     return constraints
 
-
 def constraint_to_expression_dict(c: Constraint) -> dict:
     """Convert internal Constraint object into dict under 'expression'."""
     return {
@@ -927,18 +917,6 @@ def constraint_to_expression_dict(c: Constraint) -> dict:
         "position": c.position,
         "distance": c.distance,
     }
-
-
-def puzzle_text_to_csp(text: str) -> Dict:
-    """
-    Puzzle string -> CSP dict:
-      - houses
-      - variables (dimensions/domains)
-      - constraints: list of {"expression": {...}}
-    """
-    desc_text, clue_lines = split_description_and_clues(text)
-    skeleton = parse_description(desc_text)
-    clues = extract_clues(clue_lines)
 
 def infer_names_from_clues(clues, houses: int):
     blacklist = {
@@ -962,7 +940,6 @@ def infer_names_from_clues(clues, houses: int):
             uniq.append(n)
 
     return uniq[:houses]
-
 
 def puzzle_text_to_csp(text: str) -> Dict:
     """
@@ -988,6 +965,93 @@ def puzzle_text_to_csp(text: str) -> Dict:
         "variables": skeleton.dimensions,
         "constraints": constraints,
     }
+
+# Normalize dataset after loading
+
+def _looks_like_puzzle_text(x: Any) -> bool:
+    if not isinstance(x, str):
+        return False
+    t = x.strip()
+    return ("## clues" in t.lower()) and ("there are" in t.lower()) and ("houses" in t.lower())
+
+def normalize_dataset(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Ensure the dataframe has at least:
+      - df["puzzle"]   (string puzzle text)
+      - df["solution"] (optional)
+      - df["id"]       (optional)
+    Works even if the parquet uses different column names or stores dict/JSON.
+    """
+    # 1) If there's a single column that stores dicts/JSON with keys like "puzzle"
+    for col in df.columns:
+        sample = df[col].dropna()
+        if sample.empty:
+            continue
+        v = sample.iloc[0]
+
+        # dict case
+        if isinstance(v, dict) and ("puzzle" in v or "text" in v or "problem" in v):
+            # expand dict column into separate columns
+            expanded = pd.json_normalize(df[col])
+            # keep original columns too (id might be outside)
+            for k in expanded.columns:
+                if k not in df.columns:
+                    df[k] = expanded[k]
+
+        # JSON string case
+        if isinstance(v, str) and v.strip().startswith("{") and '"puzzle"' in v:
+            try:
+                obj0 = json.loads(v)
+                if isinstance(obj0, dict):
+                    expanded = pd.json_normalize(df[col].apply(lambda s: json.loads(s) if isinstance(s, str) else {}))
+                    for k in expanded.columns:
+                        if k not in df.columns:
+                            df[k] = expanded[k]
+            except Exception:
+                pass
+
+    # 2) Determine which column is the puzzle text
+    if "puzzle" not in df.columns:
+        # common alternatives
+        candidates = ["text", "problem", "prompt", "puzzle_text", "question", "input"]
+        for c in candidates:
+            if c in df.columns:
+                df["puzzle"] = df[c].astype(str)
+                break
+
+    # 3) If still no puzzle column, auto-detect by content
+    if "puzzle" not in df.columns:
+        for col in df.columns:
+            # only check object-like columns
+            if df[col].dtype != "object":
+                continue
+            sample = df[col].dropna().astype(str).head(20)
+            if any(_looks_like_puzzle_text(s) for s in sample):
+                df["puzzle"] = df[col].astype(str)
+                break
+
+    # 4) Optional: map solution column similarly
+    if "solution" not in df.columns:
+        for c in ["answer", "target", "ground_truth", "gt", "label", "solutions"]:
+            if c in df.columns:
+                df["solution"] = df[c]
+                break
+
+    # 5) Optional: ensure id exists
+    if "id" not in df.columns:
+        if "puzzle_id" in df.columns:
+            df["id"] = df["puzzle_id"]
+        else:
+            df["id"] = [f"idx_{i}" for i in range(len(df))]
+
+    # Final sanity check
+    if "puzzle" not in df.columns:
+        raise ValueError(
+            "Could not find puzzle text column in dataset. "
+            f"Columns are: {list(df.columns)}"
+        )
+
+    return df
 
 # =================================== Run ===================================
 
@@ -1274,10 +1338,6 @@ def print_summary(results: List[PuzzleResult]):
         for r in failed[:10]:  # Show first 10
             print(f"  - {r.puzzle_id}: {'Parse error' if r.error else 'Incorrect solution'}")
 
-import csv
-
-import csv
-
 def convert_solution_to_grid_format(solution: Optional[Dict]) -> str:
     """
     Convert our solution format to the required grid_solution format.
@@ -1285,7 +1345,7 @@ def convert_solution_to_grid_format(solution: Optional[Dict]) -> str:
     Required:   {"header": ["House", "Name", "Car"], "rows": [["1", "Alice", "Ford"], ...]}
     """
     if solution is None:
-        return ""
+        return "'{}'"
     
     # Get dimensions from solution 
     dims = set()
@@ -1314,7 +1374,7 @@ def convert_solution_to_grid_format(solution: Optional[Dict]) -> str:
     # Convert to JSON string (this handles the escaping)
     return json.dumps(grid_solution)
 
-def save_results_to_csv_detailed(results: List[PuzzleResult], filepath: str = "results.csv"):
+def save_results_to_csv_detailed(results: List[PuzzleResult], filepath: str = "submission.csv"):
     """
     Save evaluation results to CSV file.
     
@@ -1349,7 +1409,7 @@ def save_results_to_csv_detailed(results: List[PuzzleResult], filepath: str = "r
     
     print(f"Results saved to {filepath}")
 
-def save_results_to_csv(results: List[PuzzleResult], filepath: str = "results.csv"):
+def save_results_to_csv(results: List[PuzzleResult], filepath: str = "submission.csv"):
     """
     Save evaluation results to CSV file in the REQUIRED format:
     
@@ -1366,8 +1426,11 @@ def save_results_to_csv(results: List[PuzzleResult], filepath: str = "results.cs
         # Data rows
         for r in results:
             # Convert solution to required grid format
-            grid_solution = convert_solution_to_grid_format(r.solution, {})
+            grid_solution = convert_solution_to_grid_format(r.solution)
             
+            if grid_solution == "'{}'":
+                r.stats.steps = 0
+
             writer.writerow([
                 r.puzzle_id,                    # id
                 grid_solution,                  # grid_solution (JSON string)
@@ -1383,7 +1446,7 @@ def main():
     
     parser = argparse.ArgumentParser(description="Zebra Logic Puzzle CSP Solver")
     parser.add_argument("--data", type=str, 
-                        default="Gridmode-00000-of-00001.parquet",
+                        default="Test_100_Puzzles.parquet",
                         help="Path to puzzle dataset (parquet)")
     parser.add_argument("--max", type=int, default=None,
                         help="Maximum puzzles to solve")
@@ -1454,7 +1517,7 @@ def main():
         verbose = args.verbose and not args.quiet
         results = run_evaluation(df, max_puzzles=args.max, verbose=verbose)
         print_summary(results)
-        save_results_to_csv(results, "evaluation_results.csv")
+        save_results_to_csv(results)
         
         # verifying the row count 
         if len(results) != 100:
@@ -1477,95 +1540,6 @@ def run():
     print_summary(results)
     
     return df, results
-
-# Normalize dataset after loading
-
-def _looks_like_puzzle_text(x: Any) -> bool:
-    if not isinstance(x, str):
-        return False
-    t = x.strip()
-    return ("## clues" in t.lower()) and ("there are" in t.lower()) and ("houses" in t.lower())
-
-def normalize_dataset(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Ensure the dataframe has at least:
-      - df["puzzle"]   (string puzzle text)
-      - df["solution"] (optional)
-      - df["id"]       (optional)
-    Works even if the parquet uses different column names or stores dict/JSON.
-    """
-    # 1) If there's a single column that stores dicts/JSON with keys like "puzzle"
-    for col in df.columns:
-        sample = df[col].dropna()
-        if sample.empty:
-            continue
-        v = sample.iloc[0]
-
-        # dict case
-        if isinstance(v, dict) and ("puzzle" in v or "text" in v or "problem" in v):
-            # expand dict column into separate columns
-            expanded = pd.json_normalize(df[col])
-            # keep original columns too (id might be outside)
-            for k in expanded.columns:
-                if k not in df.columns:
-                    df[k] = expanded[k]
-
-        # JSON string case
-        if isinstance(v, str) and v.strip().startswith("{") and '"puzzle"' in v:
-            try:
-                obj0 = json.loads(v)
-                if isinstance(obj0, dict):
-                    expanded = pd.json_normalize(df[col].apply(lambda s: json.loads(s) if isinstance(s, str) else {}))
-                    for k in expanded.columns:
-                        if k not in df.columns:
-                            df[k] = expanded[k]
-            except Exception:
-                pass
-
-    # 2) Determine which column is the puzzle text
-    if "puzzle" not in df.columns:
-        # common alternatives
-        candidates = ["text", "problem", "prompt", "puzzle_text", "question", "input"]
-        for c in candidates:
-            if c in df.columns:
-                df["puzzle"] = df[c].astype(str)
-                break
-
-    # 3) If still no puzzle column, auto-detect by content
-    if "puzzle" not in df.columns:
-        for col in df.columns:
-            # only check object-like columns
-            if df[col].dtype != "object":
-                continue
-            sample = df[col].dropna().astype(str).head(20)
-            if any(_looks_like_puzzle_text(s) for s in sample):
-                df["puzzle"] = df[col].astype(str)
-                break
-
-    # 4) Optional: map solution column similarly
-    if "solution" not in df.columns:
-        for c in ["answer", "target", "ground_truth", "gt", "label", "solutions"]:
-            if c in df.columns:
-                df["solution"] = df[c]
-                break
-
-    # 5) Optional: ensure id exists
-    if "id" not in df.columns:
-        if "puzzle_id" in df.columns:
-            df["id"] = df["puzzle_id"]
-        else:
-            df["id"] = [f"idx_{i}" for i in range(len(df))]
-
-    # Final sanity check
-    if "puzzle" not in df.columns:
-        raise ValueError(
-            "Could not find puzzle text column in dataset. "
-            f"Columns are: {list(df.columns)}"
-        )
-
-    return df
-
-# end new changes
 
 if __name__ == "__main__":
     main()
