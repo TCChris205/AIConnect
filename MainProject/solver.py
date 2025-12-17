@@ -1093,6 +1093,47 @@ def parse_expected_solution(solution_data: Any) -> Optional[Dict[int, Dict[str, 
         print(f"Warning: Could not parse solution: {e}")
         return None
 
+# Checks if a given row from the DataFrame is a multiple-choice question
+def is_mc_puzzle(row):
+    return "question" in row and "choices" in row
+
+import re
+# Parses multiple-choice question text to extract house number and dimension
+def parse_mc_question(question: str):
+    q = question.lower()
+
+    # house number
+    m_house = re.search(r"house\s+(\d+)", q)
+    if not m_house:
+        return None
+    house = int(m_house.group(1))
+
+    # dimension
+    m_dim = re.search(r"what is\s+(\w+)", q)
+    if not m_dim:
+        return None
+    dim = m_dim.group(1)
+
+    return house, dim
+
+# Gives the answer from the computed solution for a given question
+def answer_mc_question(solution, question):
+    parsed = parse_mc_question(question)
+    if not parsed:
+        return None
+
+    house, dim = parsed
+    return solution.get(house, {}).get(dim)
+
+# Checks the answer to a multiple-choice question against the solution
+def check_mc_answer(solution, row):
+    if solution is None:
+        return False
+    predicted = answer_mc_question(solution, row["question"])
+    if predicted is None:
+        return False
+    return predicted.lower() == row["answer"].lower()
+
 def compare_solutions(computed: Optional[Dict], expected: Optional[Dict]) -> bool:
     """
     Compare computed solution with expected solution.
@@ -1138,7 +1179,8 @@ def compare_solutions(computed: Optional[Dict], expected: Optional[Dict]) -> boo
         return False
 
 def solve_single_puzzle(puzzle_id: str, puzzle_text: str, 
-                        expected_solution: Any = None) -> PuzzleResult:
+                        expected_solution: Any = None,
+                        question: str = None, answer: str = None) -> PuzzleResult:
     """
     Solve a single puzzle and return results.
     
@@ -1146,6 +1188,8 @@ def solve_single_puzzle(puzzle_id: str, puzzle_text: str,
         puzzle_id: Unique identifier for the puzzle
         puzzle_text: The puzzle description text
         expected_solution: Expected solution for validation
+        question: Optional MC question
+        answer: Optional MC answer
     
     Returns:
         PuzzleResult with solution and statistics
@@ -1172,7 +1216,14 @@ def solve_single_puzzle(puzzle_id: str, puzzle_text: str,
     
     # Determine if solution is correct
     solved = solution is not None
-    correct = compare_solutions(solution, expected) if expected else solved
+    
+    if question and answer:
+        correct = check_mc_answer(solution, {"question": question, "answer": answer})
+    elif expected:
+        correct = compare_solutions(solution, expected)
+    else:
+        correct = solved
+
     
     return PuzzleResult(
         puzzle_id=puzzle_id,
@@ -1250,11 +1301,17 @@ def run_evaluation(df: pd.DataFrame, max_puzzles: int = -1,
         puzzle_id = str(row[id_col])
         puzzle_text = row[puzzle_col]
         expected = row[solution_col] if solution_col else None
+        if is_mc_puzzle(row):
+            question = row.get("question")
+            answer = row.get("answer")
+        else:
+            question = answer = None
+
         
         if verbose:
             print(f"\n[{len(results)+1}/{total}] Solving puzzle: {puzzle_id}")
         
-        result = solve_single_puzzle(puzzle_id, puzzle_text, expected)
+        result = solve_single_puzzle(puzzle_id, puzzle_text, expected, question, answer)
         results.append(result)
         
         if verbose:
@@ -1307,7 +1364,7 @@ def main():
     
     parser = argparse.ArgumentParser(description="Zebra Logic Puzzle CSP Solver")
     parser.add_argument("--data", type=str, 
-                        default="Gridmode-00000-of-00001.parquet",
+                        default="mc-00000-of-00001.parquet",
                         help="Path to puzzle dataset (parquet)")
     parser.add_argument("--max", type=int, default=None,
                         help="Maximum puzzles to solve")
@@ -1368,7 +1425,7 @@ def run():
     Returns the DataFrame and results for further processing.
     """
     # Load dataset
-    df = load_dataset("Gridmode-00000-of-00001.parquet")
+    df = load_dataset("mc-00000-of-00001.parquet")
     
     # Run evaluation on first few puzzles
     results = run_evaluation(df, max_puzzles=5, verbose=True)
