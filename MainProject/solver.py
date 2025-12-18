@@ -93,6 +93,12 @@ class CSPSolver:
                 return True  # Can't check yet
             return positions[0] == positions[1]
         
+        elif ctype == "not_same_house":
+            # X and Y must NOT be in the same house
+            if positions[0] is None or positions[1] is None:
+                return True  # Can't check yet
+            return positions[0] != positions[1]
+
         elif ctype == "position_equals":
             # X must be in house N
             target_pos = expr.get("position")
@@ -139,6 +145,10 @@ class CSPSolver:
                 return True
             return positions[1] - positions[0] == dist
         
+        # solver debugging: unknown constraint type
+
+        print(f"[WARN] Unknown constraint type ignored: {ctype} | expr={expr}")
+
         return True  # Unknown constraint type, assume satisfied
     
     def is_consistent(self, var: Tuple[str, str], value: int, 
@@ -592,6 +602,7 @@ class Constraint:
     """
     type: Literal[
         "same_house",          # X and Y are in the same house
+        "not_same_house",      # X and Y are NOT in the same house
         "position_equals",     # X is in house N
         "not_position_equals", # X is NOT in house N
         "left_of",             # X is somewhere to the left of Y
@@ -792,6 +803,69 @@ def parse_single_clue(clue: Clue, value_index: Dict[str, ItemRef]) -> Optional[C
     """
     t = clue.text.lower()
 
+        # WIP negation parser fix below
+
+            # immediately to the left of  -> X is directly left of Y
+    if "immediately to the left of" in t:
+        left_part, right_part = t.split("immediately to the left of", 1)
+        left_items = find_items_in_text(value_index, left_part)
+        right_items = find_items_in_text(value_index, right_part)
+        if left_items and right_items:
+            return Constraint(type="offset", items=[left_items[0], right_items[0]], distance=1)
+
+    # immediately to the right of -> X is directly right of Y
+    if "immediately to the right of" in t:
+        left_part, right_part = t.split("immediately to the right of", 1)
+        left_items = find_items_in_text(value_index, left_part)
+        right_items = find_items_in_text(value_index, right_part)
+        if left_items and right_items:
+            # represent "X right of Y" as "Y directly left of X"
+            return Constraint(type="offset", items=[right_items[0], left_items[0]], distance=1)
+
+    # --- NEW: "House 3 is painted yellow." / "House 1 is blue." ---
+    m = re.search(r"\bhouse\s+(\d+)\s+is\s+(?:painted\s+)?(.+?)\.\s*$", t)
+    if m:
+        pos = int(m.group(1))
+        rhs = m.group(2).strip()
+
+        # Try to find a known item in the RHS (e.g., a color)
+        rhs_items = find_items_in_text(value_index, rhs)
+        if rhs_items:
+            return Constraint(type="position_equals", items=[rhs_items[0]], position=pos)
+
+    # --- NEW: "The person in house 2 owns the fish." (also has/keeps/contains) ---
+    m = re.search(r"\bthe\s+person\s+in\s+house\s+(\d+)\s+(?:owns|has|keeps|contains)\s+the\s+(.+?)\.\s*$", t)
+    if m:
+        pos = int(m.group(1))
+        rhs = m.group(2).strip()
+
+        rhs_items = find_items_in_text(value_index, rhs)
+        if rhs_items:
+            return Constraint(type="position_equals", items=[rhs_items[0]], position=pos)
+
+    m = re.search(r"([a-z]+)\s+does not live in the\s+(.+?)\s+house", t)
+    if m:
+        name_txt = m.group(1).strip()
+        attr_txt = m.group(2).strip()
+
+        name_items = find_items_in_text(value_index, name_txt)
+        attr_items = find_items_in_text(value_index, attr_txt)
+
+        if name_items and attr_items:
+            return Constraint(type="not_same_house", items=[name_items[0], attr_items[0]])
+
+        # --- NEW: "Grace lives in house 2." ---
+    m = re.search(r"([a-z]+)\s+lives in house\s+(\d+)", t)
+    if m:
+        name_txt = m.group(1).strip()
+        pos = int(m.group(2))
+
+        name_items = find_items_in_text(value_index, name_txt)
+        if name_items:
+            return Constraint(type="position_equals", items=[name_items[0]], position=pos)
+
+    # WIP parser fix above
+
     m_not_pos_word = re.search(r"is not in the (first|second|third|fourth|fifth|sixth) house", t)
     if m_not_pos_word:
         pos = ORDINAL_WORDS[m_not_pos_word.group(1)]
@@ -868,23 +942,10 @@ def parse_single_clue(clue: Clue, value_index: Dict[str, ItemRef]) -> Optional[C
     if len(all_items) == 2:
         return Constraint(type="same_house", items=[all_items[0], all_items[1]])
 
-        # immediately to the left of  -> X is directly left of Y
-    if "immediately to the left of" in t:
-        left_part, right_part = t.split("immediately to the left of", 1)
-        left_items = find_items_in_text(value_index, left_part)
-        right_items = find_items_in_text(value_index, right_part)
-        if left_items and right_items:
-            return Constraint(type="offset", items=[left_items[0], right_items[0]], distance=1)
-
-    # immediately to the right of -> X is directly right of Y
-    if "immediately to the right of" in t:
-        left_part, right_part = t.split("immediately to the right of", 1)
-        left_items = find_items_in_text(value_index, left_part)
-        right_items = find_items_in_text(value_index, right_part)
-        if left_items and right_items:
-            # represent "X right of Y" as "Y directly left of X"
-            return Constraint(type="offset", items=[right_items[0], left_items[0]], distance=1)
-
+    # If the clue contains negation and we didn't parse it explicitly,
+    # do NOT fall back to same_house (avoids wrong positive constraints).
+    if "does not" in t or " not " in t:
+        return None
 
     if (" is " in t and "between" not in t and "left of" not in t and "right of" not in t
             and "next to" not in t and "house" not in t):
@@ -1196,6 +1257,14 @@ def solve_single_puzzle(puzzle_id: str, puzzle_text: str,
         # Step 1: Parse puzzle into CSP format
         csp = puzzle_text_to_csp(puzzle_text)
         
+        # Debug: print parsed CSP (remove later)
+
+        # print("\n=== PARSED CSP OUTPUT ===")
+        # print(json.dumps(csp, indent=2))
+        # print("========================\n")
+
+        # Debug: end
+
         # Step 2: Solve the CSP
         solution, stats = solve_puzzle(csp)
         
