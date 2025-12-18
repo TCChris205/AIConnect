@@ -9,22 +9,22 @@
 
 ## 📋 Table of Contents
 
-- [Overview](#overview)
-- [Features](#features)
-- [Problem Statement](#problem-statement)
-- [Installation](#installation)
-- [Quick Start](#quick-start)
-- [How It Works](#how-it-works)
+- [Overview](#🎯-overview)
+- [Features](#✨-features)
+- [Problem Statement](#🧩-problem-statement)
+- [Installation](#🛠️-installation)
+- [Quick Start](#🚀-quick-start)
+- [How It Works](#🔬-how-it-works)
   - [CSP Modeling](#csp-modeling)
   - [Natural Language Parser](#natural-language-parser)
   - [Solver Algorithm](#solver-algorithm)
-- [Project Structure](#project-structure)
-- [Usage Examples](#usage-examples)
-- [Output Format](#output-format)
-- [Performance](#performance)
-- [Competition Results](#competition-results)
-- [Team](#team)
-- [Acknowledgments](#acknowledgments)
+- [Project Structure](#📁-project-structure)
+- [Usage Examples](#💻-usage-examples)
+- [Output Format](#📤-output-format)
+- [Performance](#📊-performance)
+- [Competition Results](#🏆-competition-results)
+- [Team](#👥-team)
+- [Acknowledgments](#🙏-acknowledgments)
 
 ---
 
@@ -56,10 +56,11 @@ Developed for the **AI Connect 2025** international competition involving HSBI (
 
 **What is a Zebra Puzzle?**
 
-A logic grid puzzle where you must deduce assignments between entities based on clues. 
+A logic grid puzzle where you must deduce assignments between entities based on clues.
 
 **Example:**
-```
+
+```md
 There are 3 houses in a row, numbered 1 to 3 from left to right.
 - Colors: red, blue, green
 - Names: Alice, Bob, Carol
@@ -86,17 +87,20 @@ Clues:
 ### Setup
 
 1. **Clone the repository:**
+
    ```bash
    git clone https://github.com/TCChris205/AIConnect.git
    cd AIConnect/MainProject
    ```
 
 2. **Install dependencies:**
+
    ```bash
    pip install pandas pyarrow
    ```
 
 3. **Verify installation:**
+
    ```bash
    python solver.py --help
    ```
@@ -112,6 +116,7 @@ python solver.py
 ```
 
 This will:
+
 1. Load puzzles from `Test_100_Puzzles.parquet`
 2. Solve each puzzle using CSP backtracking
 3. Generate `submission.csv` with results
@@ -151,12 +156,15 @@ print(f"Nodes explored: {stats.nodes_explored}")
 Our solver represents puzzles as Constraint Satisfaction Problems:
 
 #### **Variables**
+
 Each attribute-value pair (e.g., `("name", "Alice")`) is a variable.
 
 #### **Domains**
+
 Each variable can be assigned to house positions 1 to *n* (where *n* = number of houses).
 
 #### **Constraints**
+
 Clues are parsed into constraint types:
 
 | Constraint Type | Example Clue | Formal Representation |
@@ -165,11 +173,12 @@ Clues are parsed into constraint types:
 | **Binary Equality** | "Alice owns the cat" | `position(Alice) = position(cat)` |
 | **Binary Inequality** | "Bob is not in house 2" | `position(Bob) ≠ 2` |
 | **Relative Position** | "Alice is left of Bob" | `position(Alice) < position(Bob)` |
-| **Adjacent** | "Alice is next to Bob" | `|position(Alice) - position(Bob)| = 1` |
-| **Distance** | "Two houses between Alice and Bob" | `|position(Alice) - position(Bob)| = 3` |
+| **Adjacent** | "Alice is next to Bob" | `\|position(Alice) - position(Bob)\| = 1` |
+| **Distance** | "Two houses between Alice and Bob" | `\|position(Alice) - position(Bob)\| = 3` |
 
 **Example:**
-```
+
+```md
 Variables: {("name", "Alice"), ("name", "Bob"), ("color", "red"), ("pet", "cat")}
 Domains: {1, 2, 3} for each variable
 Constraints: [
@@ -183,18 +192,22 @@ Constraints: [
 The parser converts puzzle text into CSP format through several stages:
 
 #### **1. Description Parsing**
+
 - Extracts number of houses: `"There are 3 houses"` → `houses = 3`
 - Identifies dimensions and domains:
-  ```
+
+  ```md
   "- Name: Alice, Bob, Carol" → {"name": ["Alice", "Bob", "Carol"]}
   ```
 
 #### **2. Clue Extraction**
+
 - Identifies numbered clues using regex patterns
 - Handles multi-line clues
 - Normalizes text (lowercase, remove apostrophes, etc.)
 
 #### **3. Constraint Generation**
+
 Recognizes patterns in clues:
 
 ```python
@@ -206,6 +219,7 @@ Recognizes patterns in clues:
 ```
 
 #### **4. Value Indexing**
+
 - Builds lookup table: normalized text → attribute references
 - Handles variations: "knitting" → "knit", "photography" → "photograph"
 
@@ -214,6 +228,7 @@ Recognizes patterns in clues:
 Our solver uses **backtracking search** with three key optimizations:
 
 #### **1. MRV (Minimum Remaining Values) Heuristic**
+
 - Selects the variable with the fewest legal values first
 - Reduces branching factor early in the search
 - "Fail-first" principle: detect inconsistencies sooner
@@ -225,6 +240,7 @@ def select_variable(domains):
 ```
 
 #### **2. Forward Checking**
+
 - After each assignment, prune inconsistent values from neighboring variables
 - Immediate detection of dead-ends
 - Significantly reduces search space
@@ -236,6 +252,7 @@ def forward_check(assignment, var, value):
 ```
 
 #### **3. Arc Consistency (AC-3)**
+
 - Ensures binary constraints are satisfied throughout the search
 - Propagates constraints transitively
 - More thorough than forward checking alone
@@ -262,7 +279,8 @@ def ac3(domains, constraints):
 4. **Solution Found**: When all variables are assigned consistently
 
 **Example Trace:**
-```
+
+```md
 Initial State: All domains = {1, 2, 3}
 
 Assign Alice = 1 (from clue)
@@ -280,7 +298,7 @@ Solution: {Alice: 1, Bob: 2, Carol: 3, ...}
 
 ## 📁 Project Structure
 
-```
+```md
 MainProject/
 ├── solver.py                      # Main solver implementation
 │   ├── CSPSolver class            # Backtracking + MRV + Forward Checking + AC-3
@@ -388,12 +406,14 @@ Each row contains:
 | `steps` | Number of nodes explored | `10` |
 
 **Sample Output:**
+
 ```csv
 id,grid_solution,steps
 test-3x3-005,"{""header"": [""House"", ""Color"", ""Name"", ""Pet""], ""rows"": [[""1"", ""green"", """", ""cat""], [""2"", ""white"", ""Ivan"", ""fish""], [""3"", ""blue"", ""Mallory"", ""turtle""]]}",9
 ```
 
 **Explanation:**
+
 - Puzzle `test-3x3-005` was solved in 9 search steps
 - House 1: green color, unknown name, cat
 - House 2: white color, Ivan, fish
@@ -402,6 +422,7 @@ test-3x3-005,"{""header"": [""House"", ""Color"", ""Name"", ""Pet""], ""rows"": 
 ### Empty Solutions
 
 Unsolved puzzles output empty JSON:
+
 ```csv
 test-3x3-001,'{}',0
 ```
@@ -442,6 +463,7 @@ test-3x3-001,'{}',0
 | 6x6 | 10 | 4 | 40% | 98.2 |
 
 **Note:** Larger puzzles require exponentially more search steps. Future optimization targets include:
+
 - Better constraint ordering
 - Symmetry breaking
 - Domain splitting heuristics
@@ -450,15 +472,16 @@ test-3x3-001,'{}',0
 
 ## 🏆 Competition Results
 
-**AI Connect 2025 - CSP Solver Challenge**
+### AI Connect 2025 - CSP Solver Challenge
 
 ### Composite Score Formula
 
-```
+```md
 Composite Score = Accuracy (%) - α × (AvgSteps / MaxAvgSteps)
 ```
 
 Where:
+
 - **Accuracy**: % of puzzles solved correctly
 - **AvgSteps**: Average search steps per puzzle
 - **MaxAvgSteps**: Maximum average across all teams
@@ -472,6 +495,7 @@ Where:
 | Grid Mode | 84% | 32.1 | ~81.5 |
 
 **Key Insights:**
+
 - Strong performance on smaller puzzles (2x2 to 4x4)
 - Parser handles diverse clue formulations
 - AC-3 significantly reduces search space
@@ -483,15 +507,16 @@ Where:
 
 **AI Connect 2025 - Team [Your Team Name]**
 
-| Name | University | 
+| Name | University |
 |------|------------|
 | Chris | HSBI (Germany) |
 | Adrian | HSBI (Germany) |
-| Linus | HSBI (Germany)| 
+| Linus | HSBI (Germany)|
 | Markus | HSBI (Germany) |
 | Haider Aitezaz Ali | NUST (Pakistan) |
 | Abdullah Farooq | NUST (Pakistan) |
 | Eesha Raees | NUST (Pakistan) |
+
 ---
 
 ## 🙏 Acknowledgments
@@ -516,7 +541,6 @@ MIT License - See LICENSE file for details
 - [Project Repository](https://github.com/TCChris205/AIConnect)
 - [Competition Details](https://aiconnect2025.com)
 - [ZebraLogicBench Dataset](https://huggingface.co/datasets/allenai/ZebraLogicBench)
-
 
 ---
 
