@@ -1233,6 +1233,43 @@ def compare_solutions(computed: Optional[Dict], expected: Optional[Dict]) -> boo
     except Exception:
         return False
 
+def solution_is_complete(solution: Optional[Dict]) -> bool:
+    """
+    Check that the solution is complete:
+      - solution is not None
+      - every house has the same number of attributes
+      - no attribute value is None or empty string
+    Returns True only if complete.
+    """
+    if solution is None:
+        return False
+
+    # Collect the set of all dimensions present across houses
+    all_dims = set()
+    for attrs in solution.values():
+        if not isinstance(attrs, dict):
+            return False
+        all_dims.update(attrs.keys())
+
+    if not all_dims:
+        return False
+
+    expected_count = len(all_dims)
+
+    for house, attrs in solution.items():
+        # House must have same number of attributes
+        if len(attrs) != expected_count:
+            return False
+
+        # No value should be None or empty
+        for v in attrs.values():
+            if v is None:
+                return False
+            if isinstance(v, str) and v.strip() == "":
+                return False
+
+    return True
+
 def solve_single_puzzle(puzzle_id: str, puzzle_text: str, 
                         expected_solution: Any = None) -> PuzzleResult:
     """
@@ -1268,7 +1305,16 @@ def solve_single_puzzle(puzzle_id: str, puzzle_text: str,
     
     # Determine if solution is correct
     solved = solution is not None
-    correct = compare_solutions(solution, expected) if expected else solved
+
+    if expected:
+        correct = compare_solutions(solution, expected)
+    else:
+        # If the solver returned a solution but it's incomplete (missing values
+        # or houses with differing attribute counts), mark it as incorrect.
+        if solution is not None and not solution_is_complete(solution):
+            correct = False
+        else:
+            correct = solved
     
     return PuzzleResult(
         puzzle_id=puzzle_id,
