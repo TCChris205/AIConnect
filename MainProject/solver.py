@@ -6,6 +6,8 @@ import json
 import time
 import csv
 
+FILENAME = "Test_100_Puzzles.parquet"
+
 # =================================== Solver ===================================
 
 """
@@ -1517,7 +1519,7 @@ def main():
     
     parser = argparse.ArgumentParser(description="Zebra Logic Puzzle CSP Solver")
     parser.add_argument("--data", type=str, 
-                        default="Test_100_Puzzles.parquet",
+                        default=FILENAME,
                         help="Path to puzzle dataset (parquet)")
     parser.add_argument("--max", type=int, default=None,
                         help="Maximum puzzles to solve")
@@ -1602,7 +1604,7 @@ def run():
     Returns the DataFrame and results for further processing.
     """
     # Load dataset
-    df = load_dataset("Gridmode-00000-of-00001.parquet")
+    df = load_dataset(FILENAME)
     
     # Run evaluation on first few puzzles
     results = run_evaluation(df, max_puzzles=5, verbose=True)

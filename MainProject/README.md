@@ -1,58 +1,63 @@
 # Zebra Logic Puzzle CSP Solver
 
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 > A Constraint Satisfaction Problem (CSP) solver for logic grid puzzles (Zebra puzzles) using backtracking with intelligent heuristics.
 
----
+## Table of Contents
 
-## 📋 Table of Contents
-
-- [Overview](#🎯-overview)
-- [Features](#✨-features)
-- [Problem Statement](#🧩-problem-statement)
-- [Installation](#🛠️-installation)
-- [Quick Start](#🚀-quick-start)
-- [How It Works](#🔬-how-it-works)
+- [Team](#team)
+- [Overview](#overview)
+- [Features](#features)
+- [Problem Statement](#problem-statement)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [How It Works](#how-it-works)
   - [CSP Modeling](#csp-modeling)
   - [Natural Language Parser](#natural-language-parser)
   - [Solver Algorithm](#solver-algorithm)
-- [Project Structure](#📁-project-structure)
-- [Usage Examples](#💻-usage-examples)
-- [Output Format](#📤-output-format)
-- [Performance](#📊-performance)
-- [Competition Results](#🏆-competition-results)
-- [Team](#👥-team)
-- [Acknowledgments](#🙏-acknowledgments)
+- [Project Structure](#project-structure)
+- [Usage Examples](#usage-examples)
+- [Output Format](#output-format)
+- [Performance](#performance)
+- [Competition Results](#competition-results)
+- [Acknowledgments](#acknowledgments)
 
----
+## Team
 
-## 🎯 Overview
+### AI Connect 2025 - Group 6
+
+| Name | University |
+| ---- | ---------- |
+| Christian Dück | HSBI (Germany) |
+| Adrian Kramkowski | HSBI (Germany) |
+| Linus Martinschledde | HSBI (Germany) |
+| Markus Wurms | HSBI (Germany) |
+| Haider Aitezaz Ali | NUST (Pakistan) |
+| Abdullah Farooq | NUST (Pakistan) |
+| Eesha Raees | NUST (Pakistan) |
+
+## Overview
 
 This project implements an intelligent CSP solver for **Zebra Logic Puzzles** (also known as Einstein's Riddle or Logic Grid Puzzles). The solver can:
 
-- **Parse** natural language puzzle descriptions into formal CSP representations
-- **Solve** puzzles of varying complexity (2x2 to 6x6 grids and beyond)
+- **Parse** specific natural language puzzle descriptions into formal CSP representations
+- **Solve** puzzles of varying complexity (2x2 to 6x6 grids)
 - **Optimize** search using MRV heuristic, forward checking, and arc consistency (AC-3)
 - **Generate** structured outputs for automated evaluation
 
 Developed for the **AI Connect 2025** international competition involving HSBI (Germany), TDU (Türkiye), SEECS/NUST (Pakistan), and CST/RUB (Bhutan).
 
----
+## Features
 
-## ✨ Features
+- **Intelligent Backtracking**: MRV (Minimum Remaining Values) heuristic for variable selection
+- **Constraint Propagation**: Forward checking and AC-3 for early pruning
+- **Natural Language Parsing**: Converts puzzle clues into formal constraints
+- **Detailed Statistics**: Tracks nodes explored, backtracks, and constraint checks
+- **High Accuracy**: Solves 100+ test puzzles with detailed trace generation
+- **Scalable**: Handles puzzles from 2x2 to 6x6 grids
 
-- 🧠 **Intelligent Backtracking**: MRV (Minimum Remaining Values) heuristic for variable selection
-- 🔍 **Constraint Propagation**: Forward checking and AC-3 for early pruning
-- 📝 **Natural Language Parsing**: Converts puzzle clues into formal constraints
-- 📊 **Detailed Statistics**: Tracks nodes explored, backtracks, and constraint checks
-- 🚀 **High Accuracy**: Solves 100+ test puzzles with detailed trace generation
-- 📈 **Scalable**: Handles puzzles from 2x2 to 6x6 grids
-
----
-
-## 🧩 Problem Statement
+## Problem Statement
 
 **What is a Zebra Puzzle?**
 
@@ -75,9 +80,7 @@ Clues:
 
 **Goal:** Determine which person lives in which house with which color and pet.
 
----
-
-## 🛠️ Installation
+## Installation
 
 ### Prerequisites
 
@@ -105,9 +108,7 @@ Clues:
    python solver.py --help
    ```
 
----
-
-## 🚀 Quick Start
+## Quick Start
 
 ### Run the Solver on Test Dataset
 
@@ -121,6 +122,16 @@ This will:
 2. Solve each puzzle using CSP backtracking
 3. Generate `submission.csv` with results
 4. Print accuracy and efficiency statistics
+
+### Change the called file
+
+You can either call the function `run()` from outside the file or execute the file itself. To change the file that is called, enter the name in the `FILENAME` constant right below the imports at the top of the file.
+
+Alternatively, you can execute the python file with a different dataset given:_
+
+```bash
+python solver.py --data FILE
+```
 
 ### Run on Custom Dataset
 
@@ -147,9 +158,7 @@ print(f"Solution: {solution}")
 print(f"Nodes explored: {stats.nodes_explored}")
 ```
 
----
-
-## 🔬 How It Works
+## How It Works
 
 ### CSP Modeling
 
@@ -157,18 +166,18 @@ Our solver represents puzzles as Constraint Satisfaction Problems:
 
 #### **Variables**
 
-Each attribute-value pair (e.g., `("name", "Alice")`) is a variable.
+Each house has multiple variables which have multiple possible values called domains
 
 #### **Domains**
 
-Each variable can be assigned to house positions 1 to *n* (where *n* = number of houses).
+Each attribute of a domain can be assigned a house position from 1 to *n* (where *n* = number of houses). The same number can't be present twice within one domain.
 
 #### **Constraints**
 
 Clues are parsed into constraint types:
 
 | Constraint Type | Example Clue | Formal Representation |
-|----------------|--------------|----------------------|
+| -------------- | ------------ | -------------------- |
 | **Unary** | "Alice is in house 1" | `position(Alice) = 1` |
 | **Binary Equality** | "Alice owns the cat" | `position(Alice) = position(cat)` |
 | **Binary Inequality** | "Bob is not in house 2" | `position(Bob) ≠ 2` |
@@ -182,8 +191,8 @@ Clues are parsed into constraint types:
 Variables: {("name", "Alice"), ("name", "Bob"), ("color", "red"), ("pet", "cat")}
 Domains: {1, 2, 3} for each variable
 Constraints: [
-  ("=", ("name", "Alice"), 1),           # Alice in house 1
-  ("=", ("name", "Bob"), ("color", "red")), # Bob in red house
+  ("same_house", ("name", "Alice"), 1),           # Alice in house 1
+  ("same_house", ("name", "Bob"), ("color", "red")), # Bob in red house
 ]
 ```
 
@@ -294,9 +303,7 @@ Assign Bob = ? (MRV selects Bob, domain = {2, 3})
 Solution: {Alice: 1, Bob: 2, Carol: 3, ...}
 ```
 
----
-
-## 📁 Project Structure
+## Project Structure
 
 ```md
 MainProject/
@@ -307,31 +314,29 @@ MainProject/
 │   └── Main execution logic       # Command-line interface
 │
 ├── README.md                      # This file
-├── submission.csv                 # Detailed output (100 test puzzles)
-├── submissionGridmode.csv         # Grid mode output (50 puzzles)
+├── submission.csv                 # Test_100 output (100 test puzzles)
+├── submissionGridmode.csv         # Gridmode output (1000 puzzles)
 │
 ├── Test_100_Puzzles.parquet       # Test dataset (100 puzzles)
-├── Gridmode-00000-of-00001.parquet # Grid mode dataset
-└── mc-00000-of-00001.parquet      # Full ZebraLogicBench dataset
+├── Gridmode-00000-of-00001.parquet # Gridmode dataset
+└── mc-00000-of-00001.parquet      # mc dataset
 ```
 
 ### Key Components in `solver.py`
 
 | Component | Description | Lines |
-|-----------|-------------|-------|
-| `CSPSolver` | Core backtracking solver with MRV and AC-3 | 50-400 |
-| `puzzle_text_to_csp()` | Parses natural language puzzles | 945-967 |
-| `parse_description()` | Extracts puzzle structure | 630-728 |
-| `parse_single_clue()` | Converts clues to constraints | 790-897 |
-| `solve_puzzle()` | High-level solving function | 1179-1222 |
-| `run_evaluation()` | Batch evaluation on datasets | 1261-1305 |
-| `main()` | CLI entry point | 1444-1525 |
+| --------- | ----------- | ----- |
+| `CSPSolver` | Core backtracking solver with MRV and AC-3 | 34-510 |
+| `puzzle_text_to_csp()` | Parses natural language puzzles | 1005-1028 |
+| `parse_description()` | Extracts puzzle structure | 640-741 |
+| `parse_single_clue()` | Converts clues to constraints | 799-959 |
+| `solve_puzzle()` | High-level solving function | 528-540 |
+| `run_evaluation()` | Batch evaluation on datasets | 1328-1376 |
+| `main()` | CLI entry point | 1514-1596 |
 
----
+## Usage Examples
 
-## 💻 Usage Examples
-
-### Example 1: Simple 3x3 Puzzle
+### Example 1: Simple 3x2 Puzzle
 
 ```python
 from solver import puzzle_text_to_csp, solve_puzzle
@@ -391,16 +396,14 @@ print(f"Backtracks: {result.stats.backtracks}")
 print(f"Solution: {result.solution}")
 ```
 
----
-
-## 📤 Output Format
+## Output Format
 
 ### submission.csv
 
 Each row contains:
 
 | Column | Description | Example |
-|--------|-------------|---------|
+| ------ | ----------- | ------- |
 | `id` | Puzzle identifier | `test-3x3-001` |
 | `grid_solution` | JSON solution grid | `{"header": [...], "rows": [...]}` |
 | `steps` | Number of nodes explored | `10` |
@@ -409,15 +412,12 @@ Each row contains:
 
 ```csv
 id,grid_solution,steps
-test-3x3-005,"{""header"": [""House"", ""Color"", ""Name"", ""Pet""], ""rows"": [[""1"", ""green"", """", ""cat""], [""2"", ""white"", ""Ivan"", ""fish""], [""3"", ""blue"", ""Mallory"", ""turtle""]]}",9
+test-3x3-001,"{""header"": [""House"", ""Color"", ""Name"", ""Pet""], 
+""rows"": [[""1"", ""orange"", ""Bob"", ""turtle""], 
+[""2"", ""blue"", ""Mallory"", ""cat""], 
+[""3"", ""green"", ""Alice"", ""dog""]]}",
+10
 ```
-
-**Explanation:**
-
-- Puzzle `test-3x3-005` was solved in 9 search steps
-- House 1: green color, unknown name, cat
-- House 2: white color, Ivan, fish
-- House 3: blue color, Mallory, turtle
 
 ### Empty Solutions
 
@@ -427,50 +427,20 @@ Unsolved puzzles output empty JSON:
 test-3x3-001,'{}',0
 ```
 
----
-
-## 📊 Performance
+## Performance
 
 ### Test Dataset Results (100 Puzzles)
 
 | Metric | Value |
-|--------|-------|
+| ------ | ----- |
 | **Total Puzzles** | 100 |
-| **Solved** | 23 |
-| **Accuracy** | 23% |
-| **Avg. Steps (Solved)** | 9.3 |
-| **Max Steps** | 10 |
-| **Avg. Time** | 0.15s |
+| **Solved** | 39 |
+| **Accuracy** | 39% |
+| **Avg. Steps (Solved)** | 10.2 |
+| **Max Steps** | 14 |
+| **Avg. Time** | 0.0002s |
 
-### Grid Mode Dataset (50 Puzzles)
-
-| Metric | Value |
-|--------|-------|
-| **Total Puzzles** | 50 |
-| **Solved** | 42 |
-| **Accuracy** | 84% |
-| **Avg. Steps** | 32.1 |
-| **Time Range** | 0.01s - 3.2s |
-
-### Performance by Puzzle Size
-
-| Size | Puzzles | Solved | Accuracy | Avg. Steps |
-|------|---------|--------|----------|------------|
-| 2x2 | 15 | 15 | 100% | 6.2 |
-| 3x3 | 20 | 18 | 90% | 9.5 |
-| 4x4 | 25 | 20 | 80% | 18.3 |
-| 5x5 | 20 | 12 | 60% | 45.7 |
-| 6x6 | 10 | 4 | 40% | 98.2 |
-
-**Note:** Larger puzzles require exponentially more search steps. Future optimization targets include:
-
-- Better constraint ordering
-- Symmetry breaking
-- Domain splitting heuristics
-
----
-
-## 🏆 Competition Results
+## Competition Results
 
 ### AI Connect 2025 - CSP Solver Challenge
 
@@ -489,10 +459,10 @@ Where:
 
 ### Our Results
 
-| Dataset | Accuracy | Avg Steps | Composite Score |
-|---------|----------|-----------|-----------------|
-| Test (100) | 23% | 9.3 | ~22.1 |
-| Grid Mode | 84% | 32.1 | ~81.5 |
+| Dataset     | Accuracy | Avg Steps | Composite Score |
+|---------    |----------|-----------|-----------------|
+| Test (100)  | 23%      | 9.3       | ~22.1           |
+| Grid Mode   | 84%      | 32.1      | ~81.5           |
 
 **Key Insights:**
 
@@ -500,48 +470,3 @@ Where:
 - Parser handles diverse clue formulations
 - AC-3 significantly reduces search space
 - Room for improvement on 5x5+ puzzles
-
----
-
-## 👥 Team
-
-**AI Connect 2025 - Team [Your Team Name]**
-
-| Name | University |
-|------|------------|
-| Chris | HSBI (Germany) |
-| Adrian | HSBI (Germany) |
-| Linus | HSBI (Germany)|
-| Markus | HSBI (Germany) |
-| Haider Aitezaz Ali | NUST (Pakistan) |
-| Abdullah Farooq | NUST (Pakistan) |
-| Eesha Raees | NUST (Pakistan) |
-
----
-
-## 🙏 Acknowledgments
-
-- **Dataset**: [ZebraLogicBench](https://huggingface.co/datasets/allenai/ZebraLogicBench) by Allen AI
-- **Competition**: AI Connect 2025 organizing committee
-- **References**:
-  - Russell & Norvig: *Artificial Intelligence: A Modern Approach* (CSP algorithms)
-  - Constraint Satisfaction Problems: [CSP Tutorial](https://en.wikipedia.org/wiki/Constraint_satisfaction_problem)
-  - AC-3 Algorithm: Mackworth (1977)
-
----
-
-## 📝 License
-
-MIT License - See LICENSE file for details
-
----
-
-## 🔗 Additional Resources
-
-- [Project Repository](https://github.com/TCChris205/AIConnect)
-- [Competition Details](https://aiconnect2025.com)
-- [ZebraLogicBench Dataset](https://huggingface.co/datasets/allenai/ZebraLogicBench)
-
----
-
-**For questions or issues, please open a GitHub issue or contact the team.**
