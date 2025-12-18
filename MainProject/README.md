@@ -21,7 +21,6 @@
 - [Output Format](#output-format)
 - [Performance](#performance)
 - [Competition Results](#competition-results)
-- [Acknowledgments](#acknowledgments)
 
 ## Team
 
@@ -326,13 +325,13 @@ MainProject/
 
 | Component | Description | Lines |
 | --------- | ----------- | ----- |
-| `CSPSolver` | Core backtracking solver with MRV and AC-3 | 34-510 |
-| `puzzle_text_to_csp()` | Parses natural language puzzles | 1005-1028 |
+| `CSPSolver` | Core backtracking solver with MRV and AC-3 | 9-540 |
+| `puzzle_text_to_csp()` | Parses natural language puzzles | 1001-1024 |
 | `parse_description()` | Extracts puzzle structure | 640-741 |
-| `parse_single_clue()` | Converts clues to constraints | 799-959 |
-| `solve_puzzle()` | High-level solving function | 528-540 |
-| `run_evaluation()` | Batch evaluation on datasets | 1328-1376 |
-| `main()` | CLI entry point | 1514-1596 |
+| `parse_single_clue()` | Converts clues to constraints | 799-955 |
+| `solve_puzzle()` | High-level solving function | 1234-1280 |
+| `run_evaluation()` | Batch evaluation on datasets | 1318-1366 |
+| `main()` | CLI entry point | 1502-1566 |
 
 ## Usage Examples
 
