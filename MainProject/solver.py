@@ -14,9 +14,9 @@ FILENAME = "Test_100_Puzzles.parquet"
 CSP Solver for Zebra Logic Puzzles
 
 This solver implements:
-- Backtracking search with MRV (Minimum Remaining Values) heuristic
+- MRV (Minimum Remaining Values)
 - Forward checking for early pruning
-- Arc consistency (AC-3) for constraint propagation
+- initial AC-3 preprocessing
 
 The CSP is modeled as:
 - Variables: Each (dimension, value) pair (e.g., ("name", "Alice"))
@@ -30,7 +30,7 @@ class SolverStats:
     backtracks: int = 0
     nodes_explored: int = 0
     arc_revisions: int = 0
-    steps: int = 0      #changed from steps = int = 0 (syntax error)
+    steps: int = 0
 
 @dataclass
 class CSPSolver:
@@ -805,8 +805,6 @@ def parse_single_clue(clue: Clue, value_index: Dict[str, ItemRef]) -> Optional[C
     """
     t = clue.text.lower()
 
-        # WIP negation parser fix below
-
             # immediately to the left of  -> X is directly left of Y
     if "immediately to the left of" in t:
         left_part, right_part = t.split("immediately to the left of", 1)
@@ -824,7 +822,7 @@ def parse_single_clue(clue: Clue, value_index: Dict[str, ItemRef]) -> Optional[C
             # represent "X right of Y" as "Y directly left of X"
             return Constraint(type="offset", items=[right_items[0], left_items[0]], distance=1)
 
-    # --- NEW: "House 3 is painted yellow." / "House 1 is blue." ---
+    # "House 3 is painted yellow." / "House 1 is blue."
     m = re.search(r"\bhouse\s+(\d+)\s+is\s+(?:painted\s+)?(.+?)\.\s*$", t)
     if m:
         pos = int(m.group(1))
@@ -835,7 +833,7 @@ def parse_single_clue(clue: Clue, value_index: Dict[str, ItemRef]) -> Optional[C
         if rhs_items:
             return Constraint(type="position_equals", items=[rhs_items[0]], position=pos)
 
-    # --- NEW: "The person in house 2 owns the fish." (also has/keeps/contains) ---
+    # "The person in house 2 owns the fish." (also has/keeps/contains)
     m = re.search(r"\bthe\s+person\s+in\s+house\s+(\d+)\s+(?:owns|has|keeps|contains)\s+the\s+(.+?)\.\s*$", t)
     if m:
         pos = int(m.group(1))
@@ -865,8 +863,6 @@ def parse_single_clue(clue: Clue, value_index: Dict[str, ItemRef]) -> Optional[C
         name_items = find_items_in_text(value_index, name_txt)
         if name_items:
             return Constraint(type="position_equals", items=[name_items[0]], position=pos)
-
-    # WIP parser fix above
 
     m_not_pos_word = re.search(r"is not in the (first|second|third|fourth|fifth|sixth) house", t)
     if m_not_pos_word:
@@ -1259,14 +1255,6 @@ def solve_single_puzzle(puzzle_id: str, puzzle_text: str,
         # Step 1: Parse puzzle into CSP format
         csp = puzzle_text_to_csp(puzzle_text)
         
-        # Debug: print parsed CSP (remove later)
-
-        # print("\n=== PARSED CSP OUTPUT ===")
-        # print(json.dumps(csp, indent=2))
-        # print("========================\n")
-
-        # Debug: end
-
         # Step 2: Solve the CSP
         solution, stats = solve_puzzle(csp)
         
@@ -1534,24 +1522,6 @@ def main():
     
     df = load_dataset(args.data)
     df = normalize_dataset(df)
-
-# Debug info (remove later)
-
-    print("Using dataset:", args.data)
-    print("Columns after normalize:", list(df.columns))
-
-    sample = df.iloc[0]["puzzle"]
-    print("Puzzle type:", type(sample))
-    print("Puzzle preview:", str(sample)[:250].replace("\n", "\\n"))
-
-    # Quick sanity check: does it look like a Zebra puzzle?
-    s = str(sample).lower()
-    print("Looks like puzzle:", ("there are" in s and "houses" in s and "## clues" in s))
-
-# Debug info end (remove later)
-
-    # Load dataset
-    df = load_dataset(args.data)
     
     if args.single is not None:
         # Solve single puzzle
@@ -1594,7 +1564,7 @@ def main():
         
         # verifying the row count 
         if len(results) != 100:
-            print(f"\n⚠️  WARNING: exceeded 100 puzzles, got {len(results)}")
+            print(f"\n  WARNING: exceeded 100 puzzles, got {len(results)}")
             print(f"    CSV has {len(results) + 1} lines (including header)")
 
 # Alternative entry point for direct module execution
