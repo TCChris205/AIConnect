@@ -1497,7 +1497,9 @@ def save_results_to_csv(results: List[PuzzleResult], filepath: str = "submission
             # Convert solution to required grid format
             grid_solution = convert_solution_to_grid_format(r.solution)
             
-            if grid_solution == "'{}'":
+            # Set steps to zero when no solution has been found
+
+            if grid_solution == "'{}'" or len([a for _, v in json.loads(grid_solution).items() for h in v for a in h if a == ""]) > 0:
                 r.stats.steps = 0
 
             writer.writerow([
