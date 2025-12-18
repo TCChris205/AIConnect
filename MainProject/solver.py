@@ -1,7 +1,7 @@
 from typing import Dict, List, Set, Literal, Tuple, Optional, Any
 from dataclasses import dataclass, field
 import re
-import pandas as pd
+import pandas as pd # type: ignore
 import json
 import time
 import csv
